@@ -1,24 +1,23 @@
 #include<iostream>
 #include<string>
 
+#include "common/Config.h"
+#include "net/TcpServer.h"
+
 /*
  * tracker_main.cpp
  *
- * 这个文件是 tracker 进程的入口。
+ * Step 3 新增内容：
+ * tracker 不再只是打印配置，而是会监听 port。
  *
- * 在 FastDFS 架构中，tracker 不直接存文件。
- * 它负责：
- * 1. 接收 storage server 的注册
- * 2. 接收 storage server 的心跳
- * 3. 维护 storage server 的在线状态
- * 4. 客户端上传时，为客户端选择一个可用 storage
- * 5. 客户端下载时，告诉客户端应该访问哪个 storage
+ * 当前监听模型：
+ * 阻塞 TCP server
  *
- * 当前 Step 1 只先让 tracker_server 能启动。
- * 后续我们会逐步把 Config、TcpServer、TrackerService 挂到这里。
+ * 后面会升级：
+ * 阻塞 server -> epoll server -> Reactor server
  */
 
-int main()
+int main(int argc, char* argv[])
 {
     /*
      * argc 表示命令行参数数量。
@@ -45,15 +44,79 @@ int main()
 
     std::string conf_path = argv[1];
 
-    std::cout << "[tracker] starting..." << std::endl;
-    std::cout << "[tracker] config: " <<conf_path << std::endl;
-    std::cout << "[tracker] role: tracker server" << std::endl;
-    std::cout << "[tracker] status: initialized" << std::endl;
+    /*
+     * 创建配置对象。
+     */
+    Config config;
+    
+    /*
+     * 加载配置文件。
+     *
+     * 如果失败，说明配置文件路径错误，或者配置文件格式不对。
+     */
+    if(!config.load(conf_path))
+    {
+        std::cerr << "[tracker] load config failed" << std::endl;
+        return 1;
+    }
 
     /*
-     * 当前版本执行到这里就退出。
-     * 后面实现 TcpServer 后，这里会进入事件循环，不会立即退出。
+     * 从配置中读取 tracker 监听端口。
+     *
+     * 如果配置文件没有 port，就使用默认值 22122。
      */
+    int port = config.getInt("port", 22122);
+
+     /*
+     * base_path 是 tracker 的工作目录。
+     * 后续 tracker 会在这个目录下保存日志、状态文件等。
+     */
+    std::string base_path = config.getString("base_path", "/data/tracker");
+    
+    /*
+     * store_lookup 是上传时选择 storage 的策略。
+     * 当前只是读取出来，真正负载均衡后面再实现。
+     */
+    std::string store_lookup = config.getString("store_lookup", "round_robin");
+
+    /*
+     * tracker 定期检查 storage 是否还活着。
+     * 这个字段就是检查间隔。
+     */
+    int check_active_interval = config.getInt("check_active_interval", 10);
+
+
+    std::cout << "[tracker] starting..." << std::endl;
+    std::cout << "[tracker] config: " << conf_path << std::endl;
+    std::cout << "[tracker] port: " << port << std::endl;
+    std::cout << "[tracker] base_path: " << base_path << std::endl;
+    std::cout << "[tracker] store_lookup: " << store_lookup << std::endl;
+    std::cout << "[tracker] check_active_interval: "
+              << check_active_interval << std::endl;
+    std::cout << "[tracker] status: config loaded" << std::endl;
+
+
+    /*
+     * 创建 TCP 服务端。
+     *
+     * 0.0.0.0 表示监听本机所有网卡。
+     *
+     * 如果只想本机访问，可以改成：
+     * 127.0.0.1
+     */
+    TcpServer server("0.0.0.0", port);
+
+     /*
+     * 启动监听。
+     *
+     * 当前 start() 内部会进入死循环。
+     * 所以 tracker_server 会一直运行，不会马上退出。
+     */
+    if(!server.start())
+    {
+        std::cerr << "[tracker] tcp server failed" << std::endl;
+        return 1;
+    }
     
     return 0;
 }

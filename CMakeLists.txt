@@ -15,14 +15,32 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 #代码可以写#include "common/Config.h"
 include_directories(${PROJECT_SOURCE_DIR}/src)
 
-#tracker_server 是 tracker 进程
-#后面它会负责 storage 注册、心跳检测、上传/下载调度
-add_executable(tracker_server src/main/tracker_server.cpp)
+# 公共模块源码
+set(COMMON_SRC
+    src/common/Config.cpp
+)
 
-#storage_server 是 storage 进程
-#它会负责文件的存储、上传/下载、删除等操作
-add_executable(storage_server src/main/storage_server.cpp)
+# 网络模块源码
+set(NET_SRC
+    src/net/SocketUtil.cpp
+    src/net/TcpServer.cpp
+    src/net/TcpClient.cpp
+)
 
-#fds_client 是客户端程序
-#它会负责文件的上传/下载/删除等操作
-add_executable(fds_client src/client/fds_client.cpp)
+add_executable(tracker_server
+    src/main/tracker_main.cpp
+    ${COMMON_SRC}
+    ${NET_SRC}
+)
+
+add_executable(storage_server
+    src/main/storage_main.cpp
+    ${COMMON_SRC}
+    ${NET_SRC}
+)
+
+add_executable(fdfs_cli
+    src/client/fdfs_cli.cpp
+    ${COMMON_SRC}
+    ${NET_SRC}
+)

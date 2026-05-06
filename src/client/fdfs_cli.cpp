@@ -1,28 +1,44 @@
 #include<iostream>
 #include<string>
+#include <sstream>
 
+#include "common/Config.h"
+#include "net/TcpClient.h"
 /*
  * fdfs_cli.cpp
  *
- * 这是客户端命令行工具。
+ * Step 3 新增 ping 命令：
  *
- * 后续我们会支持：
- * 1. fdfs_cli upload <file>
- * 2. fdfs_cli download <file_id> <output>
- * 3. fdfs_cli delete <file_id>
- * 4. fdfs_cli stat
+ * ./build/bin/fdfs_cli ping
  *
- * FastDFS 风格的访问流程不是直接访问 storage。
- * 正确流程是：
- *
- * 上传：
- * client -> tracker 查询可用 storage
- * client -> storage 上传文件
- *
- * 下载：
- * client -> tracker 查询 file_id 对应的 storage
- * client -> storage 下载文件
+ * 作用：
+ * 连接 tracker_server，发送一段文本，确认 TCP 网络链路已经打通。
  */
+
+static bool parseHostPort(const std::string& address,std::string* host,int* port)
+{
+     /*
+     * 解析 "127.0.0.1:22122" 这种地址。
+     */
+    std::size_t pos = address.find(':');
+    if(pos == std::string::npos)
+    {
+        return false;
+    }
+
+    *host = address.substr(0,pos);
+
+    try
+    {
+        *port = std::stoi(address.substr(pos + 1));
+    }
+    catch(...)
+    {
+        return false;
+    }
+
+    return !host->empty() && *port > 0;
+}
 
 int main(int argc,char* argv[])
 {
@@ -39,10 +55,29 @@ int main(int argc,char* argv[])
         std::cerr << "usage: fdfs_cli <command> [args]" << std::endl;
         std::cerr << "commands:" << std::endl;
         std::cerr << "  version" << std::endl;
+        std::cerr << "  ping" << std::endl;
         std::cerr << "  upload <file>" << std::endl;
         std::cerr << "  download <file_id> <output>" << std::endl;
         return 1;
     }
+
+    /*
+     * 客户端配置。
+     *
+     * 这里默认读取 conf/client.conf。
+     * 注意：运行 fdfs_cli 时要在项目根目录下执行。
+     */
+    Config config;
+    if(!config.load("conf/client.conf"))
+    {
+        std::cerr << "[client] load conf/client.conf failed" << std::endl;
+        return 1;
+    }
+    
+    std::string tracker_server = config.getString("tracker_server",
+                                                  "127.0.0.1:22122");
+    int connect_timeout = config.getInt("connect_timeout", 5);
+    int network_timeout = config.getInt("network_timeout", 30);
 
     /*
      * argv[1] 是用户输入的命令。
@@ -55,6 +90,45 @@ int main(int argc,char* argv[])
     if(command == "version")
     {
         std::cout << "TinyFastDFS version 0.1.0" << std::endl;
+        std::cout << "[client] tracker_server: "
+                  << tracker_server << std::endl;
+        std::cout << "[client] connect_timeout: "
+                  << connect_timeout << std::endl;
+        std::cout << "[client] network_timeout: "
+                  << network_timeout << std::endl;
+        return 0;
+    }
+
+    /*
+     * ping 命令用于测试 client -> tracker 的 TCP 连接。
+     *
+     * 这一步很重要：
+     * 后面的 upload/download 都建立在这个 TCP 连接能力之上。
+     */
+    if(command == "ping")
+    {
+        std::string host;
+        int port = 0;
+
+        if(!parseHostPort(tracker_server, &host, &port))
+        {
+            std::cerr << "[client] invalid tracker_server: "
+                      << tracker_server << std::endl;
+            return 1;
+        }
+
+        TcpClient client(host,port);
+
+        std::string response;
+        if(!client.sendText("PING from fdfs_cli\n", &response))
+        {
+            std::cerr << "[client] ping tracker failed" << std::endl;
+            return 1;
+        }
+
+        std::cout << "[client] ping tracker response: "
+                  << response << std::endl;
+
         return 0;
     }
 
@@ -76,6 +150,8 @@ int main(int argc,char* argv[])
             return 1;
         }
 
+        std::cout << "[client] tracker_server: "
+                  << tracker_server << std::endl;
         std::cout << "[client] upload file: " << argv[2] << std::endl;
         std::cout << "[client] upload is not implemented yet" << std::endl;
         return 0;
@@ -96,10 +172,11 @@ int main(int argc,char* argv[])
             return 1;
         }
 
+        std::cout << "[client] tracker_server: "
+                  << tracker_server << std::endl;
         std::cout << "[client] download file_id: " << argv[2] << std::endl;
         std::cout << "[client] output: " << argv[3] << std::endl;
         std::cout << "[client] download is not implemented yet" << std::endl;
-        return 0;
     }
 
     /*
