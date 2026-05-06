@@ -29,11 +29,17 @@ set(NET_SRC
     src/net/TcpClient.cpp
 )
 
+set(TRACKER_SRC
+    src/tracker/StorageRegistry.cpp
+    src/tracker/TrackerService.cpp
+)
+
 add_executable(tracker_server
     src/main/tracker_main.cpp
     ${COMMON_SRC}
     ${PROTOCOL_SRC}
     ${NET_SRC}
+    ${TRACKER_SRC}
 )
 
 add_executable(storage_server

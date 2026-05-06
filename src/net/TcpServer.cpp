@@ -4,15 +4,20 @@
 #include "protocol/Command.h"
 #include "protocol/Protocol.h"
 
+#include <arpa/inet.h>
 #include <cerrno>
 #include <cstring>
 #include <iostream>
+#include <netinet/in.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
 TcpServer::TcpServer(const std::string& ip, int port)
     : ip_(ip), port_(port) {}
 
+void TcpServer::setPacketHandler(PacketHandler handler) {
+    packet_handler_ = handler;
+}
 /*
  * start
  *
@@ -69,10 +74,25 @@ bool TcpServer::start()
             continue;
         }
 
-        std::cout << "[tcp_server] client connected, fd="
-                  << client_fd << std::endl;
+        /*
+         * 把客户端 IP 从二进制格式转成字符串格式。
+         *
+         * 例如：
+         * 127.0.0.1
+         */
+        char ip_buffer[INET_ADDRSTRLEN];
+        std::memset(ip_buffer, 0, sizeof(ip_buffer));
 
-        handleClient(client_fd);
+        const char* ip_result = ::inet_ntop(AF_INET, &client_addr.sin_addr, ip_buffer, sizeof(ip_buffer));
+
+        std::string peer_ip = ip_result ? ip_buffer : "unknown";
+
+        std::cout << "[tcp_server] client connected"
+                  << ", fd=" << client_fd
+                  << ", ip=" << peer_ip
+                  << std::endl;
+
+        handleClient(client_fd, peer_ip);
 
         /*
          * 当前版本一次连接只处理一次请求。
@@ -90,7 +110,7 @@ bool TcpServer::start()
     return true;
 }
 
-void TcpServer::handleClient(int client_fd)
+void TcpServer::handleClient(int client_fd, const std::string& peer_ip)
 {
     char buffer[1024];
 
@@ -152,18 +172,33 @@ void TcpServer::handleClient(int client_fd)
      * QUERY_UPLOAD_STORAGE -> TrackerService::handleQueryUpload
      */
     Packet response;
-    if(request.header.cmd == Command::PING) {
-        response = Protcool::makePacket(
-            Command::RESPONSE,
-            Status::OK,
-            "PONG from tracker"
-        );
-    } else {
-        response = Protcool::makePacket(
-            Command::RESPONSE,
-            Status::ERROR,
-            "unknown command"
-        );
+
+     /*
+     * 如果设置了业务回调，就交给业务层处理。
+     *
+     * 对 tracker 来说，这里会调用 TrackerService::handlePacket。
+     */
+    if(packet_handler_) {
+        response = packet_handler_(request, peer_ip);
+    } else
+    {
+        /*
+         * 如果没有设置业务回调，提供一个默认 PING 处理。
+         * 这样 TcpServer 本身仍然可单独测试。
+         */
+        if(request.header.cmd == Command::PING) {
+            response = Protcool::makePacket(
+                Command::RESPONSE,
+                Status::OK,
+                "PONG"
+            );
+        } else {
+            response = Protcool::makePacket(
+                Command::RESPONSE,
+                Status::ERROR,
+                "no packet handler"
+            );
+        }
     }
 
     std::string encoded = Protcool::encode(response);

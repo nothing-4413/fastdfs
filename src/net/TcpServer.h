@@ -1,29 +1,39 @@
 #pragma once
 
+#include "protocol/Packet.h"
+
+#include <functional>
 #include <string>
 
 /*
  * TcpServer
  *
- * 这是一个最小可用 TCP 服务端。
+ * Step 5 修改：
  *
- * 当前版本特点：
- * 1. 阻塞 accept
- * 2. 一次处理一个客户端连接
- * 3. 收到客户端消息后，返回固定响应
+ * TcpServer 不再自己决定如何处理 cmd。
+ * 它只负责：
+ * 1. accept 连接
+ * 2. recv 数据
+ * 3. decode Packet
+ * 4. 调用 packet_handler_
+ * 5. encode response
+ * 6. send response
  *
- * 为什么不一开始就写 epoll？
- *
- * 因为这个项目要从 FastDFS 架构逐步复现。
- * 网络层也要先从最基本的 TCP 模型跑通。
- *
- * 后面升级路线：
- * 阻塞 TcpServer
- *   -> 多线程 TcpServer
- *   -> epoll TcpServer
- *   -> Reactor 风格 TcpServer
+ * 真正业务逻辑交给 TrackerService。
  */
 class TcpServer {
+public:
+     /*
+     * PacketHandler 是一个函数类型。
+     *
+     * 参数：
+     * const Packet&：请求包
+     * const std::string&：对端 IP
+     *
+     * 返回：
+     * Packet 响应包
+     */
+    typedef std::function<Packet(const Packet&,const std::string&)> PacketHandler;
 public:
     /*
      * 构造函数。
@@ -32,6 +42,13 @@ public:
      * port：监听端口
      */
     TcpServer(const std::string& ip, int port);
+
+    /*
+     * 设置业务处理函数。
+     *
+     * tracker_server 会把 TrackerService::handlePacket 绑定进来。
+     */
+    void setPacketHandler(PacketHandler handler) {
 
     /*
      * 启动服务端。
@@ -47,9 +64,10 @@ private:
      *
      * 当前只是读取客户端发送的文本，然后返回一段 response。
      */
-    void handleClient(int clientFd);
+    void handleClient(int client_fd, const std::string& peer_ip);
 
 private:
     std::string ip_;
     int port_;
+    PacketHandler packet_handler_;
 };

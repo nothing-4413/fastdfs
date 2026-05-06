@@ -1,32 +1,65 @@
-#include<iostream>
-#include<string>
-
 #include "common/Config.h"
+#include "net/TcpClient.h"
+#include "protocol/Command.h"
+#include "protocol/Protocol.h"
+
+#include <iostream>
+#include <sstream>
+#include <string>
 
 /*
  * storage_main.cpp
  *
- * 这个文件是 storage 进程的入口。
+ * Step 5：
  *
- * 在 FastDFS 架构中，storage 是真正存文件的节点。
- * 它负责：
- * 1. 启动后向 tracker 注册自己
- * 2. 定期向 tracker 发送心跳
- * 3. 接收客户端上传的文件
- * 4. 根据 file_id 返回文件内容
- * 5. 删除文件
- * 6. 后期与同 group 内其他 storage 做副本同步
- *
- * 本阶段新增：
- * 1. 读取 storage.conf
- * 2. 解析 group_name
- * 3. 解析 port
- * 4. 解析 base_path
- * 5. 解析 store_path0
- * 6. 解析 tracker_server
- * 7. 解析 heart_beat_interval
- * 后续 storage 会用这些配置连接 tracker，并启动自己的文件服务端口
+ * storage_server 启动后不再只是读取配置。
+ * 它会主动连接 tracker_server，并发送 STORAGE_JOIN 注册包。
  */
+static bool parseHoppstPort(const std::string& address, std::string* host, int* port)
+{
+    std::size_t pos = address.find(':');
+    if(pos == std::string::npos)
+    {
+        return false;
+    }
+
+    *host = address.substr(0,pos);
+
+    try
+    {
+      *port = std::stoi(adress.substr(pos + 1));
+    }
+    catch(...)
+    {
+      return false;
+    }
+
+    return !host->empty() && *port > 0 ;
+}
+
+/*
+ * buildStorageJoinBody
+ *
+ * 构造 STORAGE_JOIN 的 body。
+ *
+ * 当前使用 key=value 多行文本，方便你调试和学习。
+ *
+ * 后面可以改成更严格的二进制结构。
+ */
+static std::string buildStorageJoinBody(const std::string& group_name,
+                                        int port,
+                                        const std::string& base_path,
+                                        const std::string& store_path0) 
+{
+  std::ostringstream oss;
+
+    oss << "group_name=" << group_name << "\n";
+    oss << "port=" << port << "\n";
+    oss << "base_path=" << base_path << "\n";
+    oss << "store_path0=" << store_path0 << "\n";
+
+    return oss.str();
+}
 
  int main(int argc,char* argv[])
  {
@@ -122,9 +155,67 @@
    std::cout << "[storage] status: config loaded" << std::endl;
 
     /*
-     * 当前阶段直接退出。
-     * Step 3/4 会实现网络连接和 STORAGE_JOIN。
-     */ 
+     * 解析 tracker_server。
+     *
+     * 例如：
+     * 127.0.0.1:22122
+     *
+     * host = 127.0.0.1
+     * tracker_port = 22122
+     */
+    std::string tracker_host;
+    int tracker_port = 0;
 
+    if(!parseHostPort(tracker_server, &tracker_host, &tracker_port))
+    {
+        std::cerr << "[storage] invalid tracker_server: " << tracker_server << std::endl;
+        return 1;
+    }
+
+    /*
+     * 创建到 tracker 的客户端连接对象。
+     */
+    TcpClient client(tracker_host, tracker_port);
+
+    /*
+     * 构造 STORAGE_JOIN 请求 body。
+     */
+    std::string body = buildStorageJoinBody(
+        group_name,
+        port,
+        base_path,
+        store_path0
+    );
+
+    /*
+     * 构造 STORAGE_JOIN 包。
+     */
+    Packet request = Protocol::makePacket(
+        Command::STORAGE_JOIN,
+        Status::OK,
+        body
+    );
+
+    Packet response;
+
+    /*
+     * 发送注册包给 tracker。
+     */
+    if(!client.sendPacket(request, &response))
+    {
+        std::cerr << "[storage] join tracker failed" << std::endl;
+        return 1;
+    }
+
+    std::cout << "[storage] join response status: "
+              << static_cast<int>(response.header.status) << std::endl;
+    std::cout << "[storage] join response body: "
+              << response.body << std::endl;
+              
+    /*
+     * 当前 Step 5 注册成功后直接退出。
+     *
+     * 下一步 Step 6 会让 storage 保持运行，并定期发送 heartbeat。
+     */
    return 0;
 }

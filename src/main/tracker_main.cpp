@@ -1,20 +1,28 @@
-#include<iostream>
-#include<string>
-
 #include "common/Config.h"
 #include "net/TcpServer.h"
+#include "tracker/TrackerService.h"
+
+#include <functional>
+#include <iostream>
+#include <string>
 
 /*
  * tracker_main.cpp
  *
- * Step 3 新增内容：
- * tracker 不再只是打印配置，而是会监听 port。
+ * Step 5：
  *
- * 当前监听模型：
- * 阻塞 TCP server
+ * tracker_server 不再直接处理网络包。
+ * 它会创建 TrackerService，并把 TrackerService::handlePacket
+ * 注册到 TcpServer 里。
  *
- * 后面会升级：
- * 阻塞 server -> epoll server -> Reactor server
+ * 结构：
+ *
+ * TcpServer
+ *   ↓ 收包
+ * TrackerService
+ *   ↓ 根据 cmd 处理业务
+ * StorageRegistry
+ *   ↓ 保存 storage 节点
  */
 
 int main(int argc, char* argv[])
@@ -93,8 +101,15 @@ int main(int argc, char* argv[])
     std::cout << "[tracker] store_lookup: " << store_lookup << std::endl;
     std::cout << "[tracker] check_active_interval: "
               << check_active_interval << std::endl;
-    std::cout << "[tracker] status: config loaded" << std::endl;
 
+    /*
+     * 创建 tracker 业务服务对象。
+     *
+     * 注意：
+     * service 必须在 server.start() 之前创建。
+     * 因为 TcpServer 回调里会使用它。
+     */
+    TrackerService service;
 
     /*
      * 创建 TCP 服务端。
@@ -106,6 +121,24 @@ int main(int argc, char* argv[])
      */
     TcpServer server("0.0.0.0", port);
 
+    /*
+     * 绑定业务回调。
+     *
+     * std::bind 的含义：
+     * 当 TcpServer 收到 Packet 后，调用：
+     *
+     * service.handlePacket(request, peer_ip)
+     *
+     * std::placeholders::_1 表示第一个参数 request。
+     * std::placeholders::_2 表示第二个参数 peer_ip。
+     */
+    server.setPacketHandler(
+        std::bind(&TrackerService::handlePacket,
+                  &service,
+                  std::placeholders::_1,
+                  std::placeholders::_2)
+    );
+    
      /*
      * 启动监听。
      *
