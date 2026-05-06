@@ -15,12 +15,14 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 #代码可以写#include "common/Config.h"
 include_directories(${PROJECT_SOURCE_DIR}/src)
 
-# 公共模块源码
 set(COMMON_SRC
     src/common/Config.cpp
 )
 
-# 网络模块源码
+set(PROTOCOL_SRC
+    src/protocol/Protocol.cpp
+)
+
 set(NET_SRC
     src/net/SocketUtil.cpp
     src/net/TcpServer.cpp
@@ -30,17 +32,20 @@ set(NET_SRC
 add_executable(tracker_server
     src/main/tracker_main.cpp
     ${COMMON_SRC}
+    ${PROTOCOL_SRC}
     ${NET_SRC}
 )
 
 add_executable(storage_server
     src/main/storage_main.cpp
     ${COMMON_SRC}
+    ${PROTOCOL_SRC}
     ${NET_SRC}
 )
 
 add_executable(fdfs_cli
     src/client/fdfs_cli.cpp
     ${COMMON_SRC}
+    ${PROTOCOL_SRC}
     ${NET_SRC}
 )

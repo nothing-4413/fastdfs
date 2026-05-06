@@ -1,6 +1,8 @@
 #include "net/TcpServer.h"
 
 #include "net/SocketUtil.h"
+#include "protocol/Command.h"
+#include "protocol/Protocol.h"
 
 #include <cerrno>
 #include <cstring>
@@ -117,26 +119,56 @@ void TcpServer::handleClient(int client_fd)
         return;
     }
 
-    std:: string request(buffer,static_cast<std::size_t>(n));
+    std:: string data(buffer,static_cast<std::size_t>(n));
 
-    std::cout << "[tcp_server] recv: " << request << std::endl;
+    Packet request;
+    if (!Protocol::parsePacket(data, request)) {
+        std::cerr << "[tcp_server] decode request failed" << std::endl;
+        
+        Packet response = Protcool::makePacket(
+            Command::RESPONSE,
+            Status::ERROR,
+            "bad packet"
+        );
+
+        std::string encoded = Protcool::encode(response);
+        ::send(client_fd, encoded.data(), encoded.size(), 0);
+        return;
+    }
+
+    std::cout << "[tcp_server] packet received"
+              << ", cmd=" << static_cast<int>(request.header.cmd)
+              << ", status=" << static_cast<int>(request.header.status)
+              << ", body_length=" << request.header.body_length
+              << ", body=" << request.body
+              << std::endl;
 
     /*
-     * 当前固定返回一段文本。
+     * 当前只处理 PING。
      *
-     * 下一步实现协议后，这里会根据 cmd 做不同处理：
-     * STORAGE_JOIN
-     * STORAGE_HEARTBEAT
-     * QUERY_UPLOAD_STORAGE
+     * 后续会在这里分发：
+     * STORAGE_JOIN -> TrackerService::handleStorageJoin
+     * STORAGE_HEARTBEAT -> TrackerService::handleHeartbeat
+     * QUERY_UPLOAD_STORAGE -> TrackerService::handleQueryUpload
      */
-    std::string response = "TinyFastDFS tracker response\n";
+    Packet response;
+    if(request.header.cmd == Command::PING) {
+        response = Protcool::makePacket(
+            Command::RESPONSE,
+            Status::OK,
+            "PONG from tracker"
+        );
+    } else {
+        response = Protcool::makePacket(
+            Command::RESPONSE,
+            Status::ERROR,
+            "unknown command"
+        );
+    }
 
-    /*
-     * send()
-     *
-     * 向客户端发送响应。
-     */
-    ssize_t sent = ::send(client_fd, response.data(), response.size(), 0);
+    std::string encoded = Protcool::encode(response);
+    
+    ssize_t sent = ::send(client_fd, encoded.data(), encoded.size(), 0);
     if (sent < 0) {
         std::cerr << "[tcp_server] send failed: "
                   << std::strerror(errno) << std::endl;

@@ -1,5 +1,7 @@
 #pragma once
 
+#include "protocol/Packet.h"
+
 #include <string>
 
 /*
@@ -7,28 +9,29 @@
  *
  * 最小可用 TCP 客户端。
  *
- * 当前作用：
- * fdfs_cli 可以通过它连接 tracker_server。
- *
- * 后面它会继续承担：
- * 1. client 连接 tracker 查询 storage
- * 2. client 连接 storage 上传文件
- * 3. client 连接 storage 下载文件
- * 4. storage 连接 tracker 注册和心跳
+ * Step 4 开始，TcpClient 不再只发送纯文本。
+ * 它可以发送 Packet，并接收 Packet。
  */
 class TcpClient
 {
 public:
     TcpClient(const std::string& ip,int port);
 
-     /*
-     * 发送一段文本消息，并读取服务端响应。
+    /*
+     * 发送一段文本消息，并读取文本响应。
      *
-     * 当前阶段只用于测试网络是否打通。
+     * 这个接口暂时保留，方便对比学习。
      */
-    bool sendText(const std::string& text, std::string* response);
+    bool sendText(const std::string& text,std::string& response);
 
-private:
+    /*
+     * 发送协议包，并读取响应协议包。
+     *
+     * 后续所有 FastDFS 风格操作都会用这个接口。
+     */
+    bool sendPacket(const Packet& packet,Packet& response);
+
+private
     std::string ip_;
-    int port_;
-};
+    int port;
+}

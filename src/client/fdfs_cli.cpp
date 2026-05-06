@@ -1,18 +1,15 @@
 #include<iostream>
 #include<string>
-#include <sstream>
 
 #include "common/Config.h"
 #include "net/TcpClient.h"
+#include "protocol/Command.h"
+#include "protocol/Protocol.h"
 /*
  * fdfs_cli.cpp
  *
- * Step 3 新增 ping 命令：
- *
- * ./build/bin/fdfs_cli ping
- *
- * 作用：
- * 连接 tracker_server，发送一段文本，确认 TCP 网络链路已经打通。
+ * Step 4：
+ * ping 命令不再发送普通文本，而是发送协议包 Packet。
  */
 
 static bool parseHostPort(const std::string& address,std::string* host,int* port)
@@ -119,15 +116,32 @@ int main(int argc,char* argv[])
 
         TcpClient client(host,port);
 
-        std::string response;
-        if(!client.sendText("PING from fdfs_cli\n", &response))
+        /*
+         * 构造 PING 请求包。
+         *
+         * cmd = PING
+         * status = OK
+         * body = "hello tracker"
+         */
+        Packet request = Protcool::makePacket(
+            Command::PING,
+            Status::OK,
+            "hello tracker\n"
+        );
+        
+        Packet response;
+        if(!client.sendPacket(request, &response))
         {
             std::cerr << "[client] ping tracker failed" << std::endl;
             return 1;
         }
 
-        std::cout << "[client] ping tracker response: "
-                  << response << std::endl;
+        std::cout << "[client] response cmd: "
+                  << static_cast<int>(response.header.cmd) << std::endl;
+        std::cout << "[client] response status: "
+                  << static_cast<int>(response.header.status) << std::endl;
+        std::cout << "[client] response body: "
+                  << response.body << std::endl;
 
         return 0;
     }
