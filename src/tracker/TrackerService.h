@@ -10,11 +10,11 @@
  *
  * tracker 的业务处理层。
  *
- * Step 7 新增：
- * checkAlive()
- *
- * 它由 tracker_main 中的后台线程周期性调用，
- * 用来检查 storage 是否超时未发送心跳。
+ * 当前支持：
+ * 1. PING
+ * 2. STORAGE_JOIN
+ * 3. STORAGE_HEARTBEAT
+ * 4. QUERY_UPLOAD_STORAGE
  */
 class TrackerService {
 public:
@@ -53,6 +53,14 @@ private:
      */
     Packet handleStorageHeartbeat(const Packet& request, const std::string& peer_ip);
     
+    /*
+     * 处理客户端上传前的 storage 查询。
+     *
+     * client 并不直接知道该上传到哪个 storage。
+     * 它必须先问 tracker。
+     */
+    Packet handleQueryUploadStorage(const Packet& request);
+
     /*
      * 从 STORAGE_JOIN 的 body 中解析 storage 信息。
      *

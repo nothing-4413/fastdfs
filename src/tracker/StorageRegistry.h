@@ -10,10 +10,10 @@
  *
  * 表示一个 storage server 节点。
  *
- * online = true：tracker 认为它在线
- * online = false：tracker 认为它已经下线
- *
- * last_heartbeat 表示最近一次收到心跳的时间。
+ * tracker 会根据这些信息判断：
+ * 1. 这个 storage 属于哪个 group
+ * 2. 这个 storage 是否在线
+ * 3. client 上传文件时能不能选择它
  */
 struct StorageNode {
     std::string group_name;
@@ -28,11 +28,13 @@ struct StorageNode {
 /*
  * StorageRegistry
  *
- * tracker 内部的 storage 节点注册表。
+ * tracker 内部维护的 storage 注册表。
  *
- * Step 7 新增：
- * 1. 根据心跳时间标记超时节点
- * 2. 打印当前所有 storage 节点状态
+ * Step 8 新增：
+ * selectUploadStorage()
+ *
+ * 作用：
+ * 从当前 online storage 中选择一个用于上传。
  */
 class StorageRegistry
 {
@@ -70,6 +72,32 @@ public:
      * 本次被标记为 offline 的节点数量。
      */
     int makeTimeoutNodes(int timeout_seconds);
+
+    /*
+     * 选择一个可用于上传的 storage。
+     *
+     * 参数：
+     * group_name：
+     *   如果为空，表示不指定 group，从所有 online storage 里选择。
+     *   如果不为空，表示只从指定 group 中选择。
+     *
+     * selected：
+     *   输出参数，保存被选中的 storage。
+     *
+     * 返回：
+     *   true：选中 storage
+     *   false：没有可用 storage
+     *
+     * 当前策略：
+     *   选择第一个 online storage。
+     *
+     * 后面会替换成：
+     *   round robin
+     *   最大剩余空间
+     *   指定 group
+     */
+    bool selectUploadStorge(const std::string& group_name,StorageNode* selected)const;
+    
 
     /*
      * 返回当前所有 storage 节点。

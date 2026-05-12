@@ -55,6 +55,27 @@ parseKetyValueBody(const std::string& body)
     return result;
 
 }
+
+/*
+ * buildStorageResponseBody
+ *
+ * 把 tracker 选中的 storage 节点打包成 key=value 格式。
+ *
+ * client 收到后会解析出：
+ * group_name
+ * ip
+ * port
+ */
+static std::string buildStorageResponseBody(const StorgeNode& node)
+{
+    std::ostringstream oss;
+
+    oss << "group_name=" << node.group_name << "\n";
+    oss << "ip=" << node.ip << "\n";
+    oss << "port=" << node.port << "\n";
+
+    return oss.str();
+}
 Packet TrackerService::handlePacket(const Packet&request,const std::string& peer_ip)
 {
      /*
@@ -73,6 +94,9 @@ Packet TrackerService::handlePacket(const Packet&request,const std::string& peer
 
         case Command::STORAGE_HEARTBEAT:
             return handleStorageHeartbeat(request, peer_ip);
+
+        case Command::QUERY_UPLOAD_STORAGE:
+            return handleQueryUploadStorage(request);
 
         default:
             return Protocol::makePacket(
@@ -198,6 +222,61 @@ Packet TrackerService::handleStorageHeartbeat(const Packet& request,const std::s
         Command::RESPONSE,
         Status::OK,
         "heartbeat ok"
+    );
+}
+
+Packet TrackerService::handleQueryUploadStorage(const Packet& request)
+{   
+    /*
+     * 当前 request.body 可以为空。
+     *
+     * 后面如果支持指定 group 上传，可以让 body 传：
+     *
+     * group_name=group1
+     */
+    std::unordered_map<std::string,std::string> kv = parseKetyValueBody(request.body);
+
+    std::string group_name;
+
+    if(kv.find("group_name") != kv.end())
+    {
+        group_name = kv["group_name"];
+    }
+
+    /*
+     * 从 registry_ 里选一个 storage 节点。
+     *
+     * 目前的选取策略是随机选一个在线的节点，后面可以改成更智能的负载均衡算法。
+     */
+    StorgeNode selected;
+    bool ok = registry_.selectUploadStorge(group_name, &selected);
+
+    if(!ok)
+    {
+        std::cout << "[tracker] query upload storage failed"
+                  << ", no available storage"
+                  << ", group=" << group_name
+                  << std::endl;
+
+        return Protocol::makePacket(
+            Command::RESPONSE,
+            Status::ERROR,
+            "no available storage"
+        );
+    }
+
+    std::cout << "[tracker] query upload storage"
+              << ", selected group=" << selected.group_name
+              << ", ip=" << selected.ip
+              << ", port=" << selected.port
+              << std::endl;
+
+    std::string body = buildStorageResponseBody(selected);
+
+    return Protocol::makePacket(
+        Command::RESPONSE,
+        Status::OK,
+        body
     );
 }
 

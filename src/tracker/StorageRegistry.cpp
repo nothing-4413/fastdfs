@@ -110,6 +110,38 @@ int StorageRegistry::makeTimeoutNodes(int timeout_seconds)
     }
 }
 
+bool StorageRegistry::selectUploadStorge(const std::string& group_name, StorageNode* selected) const
+{
+    if(selected == nullptr) {
+        return false;
+    }
+
+    /*
+     * 当前选择策略非常简单：
+     *
+     * 遍历所有节点，找到第一个 online 的 storage。
+     *
+     * 如果 group_name 不为空，就要求 group_name 也匹配。
+     *
+     * 这个函数是后续负载均衡的扩展点。
+     */
+    for(std::unordered_map<std::string, StorageNode>::const_iterator it = nodes_.begin(); it != nodes_.end(); ++it) {
+        const StorageNode& node = it->second;
+
+        if (!node.online) {
+            continue;
+        }
+
+        if (!group_name.empty() && node.group_name != group_name) {
+            continue;
+        }
+
+        *selected = node;
+        return true;
+    }
+    return false;
+}
+
 std::vector<StorageNode> StorageRegistry::listALL() const
 {
     std::vector<StorageNode> result;

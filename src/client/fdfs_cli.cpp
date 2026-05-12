@@ -1,15 +1,31 @@
-#include<iostream>
-#include<string>
+#include <iostream>
+#include <sstream>
+#include <string>
+#include <unordered_map>
 
 #include "common/Config.h"
 #include "net/TcpClient.h"
 #include "protocol/Command.h"
 #include "protocol/Protocol.h"
+
 /*
  * fdfs_cli.cpp
  *
- * Step 4：
- * ping 命令不再发送普通文本，而是发送协议包 Packet。
+ * Step 8：
+ *
+ * upload 命令开始执行上传前查询。
+ *
+ * 当前流程：
+ * fdfs_cli upload test.txt
+ *   ↓
+ * 连接 tracker
+ *   ↓
+ * 发送 QUERY_UPLOAD_STORAGE
+ *   ↓
+ * tracker 返回 group_name + ip + port
+ *
+ * 注意：
+ * 这一节还没有真正连接 storage 上传文件。
  */
 
 static bool parseHostPort(const std::string& address,std::string* host,int* port)
@@ -35,6 +51,98 @@ static bool parseHostPort(const std::string& address,std::string* host,int* port
     }
 
     return !host->empty() && *port > 0;
+}
+
+
+/*
+ * 解析 key=value 多行 body。
+ *
+ * tracker 返回的 storage 信息格式：
+ *
+ * group_name=group1
+ * ip=127.0.0.1
+ * port=23000
+ */
+static std::unordered_map<std::string,std::string> parseKeyValueBody(const std::string& body)
+{
+    std::unordered_map<std::string,std::string> result;
+    std::istringstream ss(body);
+    std::string line;
+
+    while(std::getline(ss,line))
+    {
+        if (line.empty()) {
+            continue;
+        }
+
+        std::size_t pos = line.find('=');
+        if(pos == std::string::npos)
+        {
+            continue;
+        }
+
+        std::string key = line.substr(0,pos);
+        std::string value = line.substr(pos + 1);
+
+        result[key] = value;
+    }
+
+    return result;
+}
+
+/*
+ * queryUploadStorage
+ *
+ * 向 tracker 查询一个可用于上传的 storage。
+ */
+static bool queryUploadStorage(const std::string& tracker_host,
+                               int tracker_port)
+{
+    TcpClient client(tracker_host,tracker_port);
+
+    /*
+     * 当前不指定 group，因此 body 为空。
+     *
+     * 后面如果要指定 group，可以传：
+     * group_name=group1
+     */
+    Packet request = Protcool::makePacket(
+        Command::QUERY_UPLOAD_STORAGE,
+        Status::OK,
+        ""
+    );
+
+    Packet response;
+
+    if(!client.sendPacket(request, &response))
+    {
+        std::cerr << "[client] query upload storage failed" << std::endl;
+        return false;
+    }
+
+   if (response.header.status != Status::OK) {
+        std::cerr << "[client] tracker returned error: "
+                  << response.body << std::endl;
+        return false;
+    }
+
+    std::unordered_map<std::string,std::string> kv =
+        parseKeyValueBody(response.body);
+
+    if (kv.find("group_name") == kv.end() ||
+        kv.find("ip") == kv.end() ||
+        kv.find("port") == kv.end()) {
+        std::cerr << "[client] bad tracker response body: "
+                  << response.body << std::endl;
+        return false;
+    }
+
+    std::cout << "[client] selected storage:" << std::endl;
+    std::cout << "  group_name: " << kv["group_name"] << std::endl;
+    std::cout << "  ip: " << kv["ip"] << std::endl;
+    std::cout << "  port: " << kv["port"] << std::endl;
+
+    return true;
 }
 
 int main(int argc,char* argv[])
@@ -76,11 +184,20 @@ int main(int argc,char* argv[])
     int connect_timeout = config.getInt("connect_timeout", 5);
     int network_timeout = config.getInt("network_timeout", 30);
 
+    std::string tracker_host;
+    int tracker_port = 0;
+
+    if(!parseHostPort(tracker_server, &tracker_host, &tracker_port))
+    {
+        std::cerr << "[client] invalid tracker_server: "
+                  << tracker_server << std::endl;
+        return 1;
+    }
+
     /*
      * argv[1] 是用户输入的命令。
      */
     std::string command = argv[1];
-
     /*
      * version 命令用于验证客户端程序是否能正常运行。
      */
@@ -104,31 +221,14 @@ int main(int argc,char* argv[])
      */
     if(command == "ping")
     {
-        std::string host;
-        int port = 0;
+        TcpClient client(tracker_host,tracker_port);
 
-        if(!parseHostPort(tracker_server, &host, &port))
-        {
-            std::cerr << "[client] invalid tracker_server: "
-                      << tracker_server << std::endl;
-            return 1;
-        }
-
-        TcpClient client(host,port);
-
-        /*
-         * 构造 PING 请求包。
-         *
-         * cmd = PING
-         * status = OK
-         * body = "hello tracker"
-         */
         Packet request = Protcool::makePacket(
             Command::PING,
             Status::OK,
-            "hello tracker\n"
+            "hello tracker"
         );
-        
+
         Packet response;
         if(!client.sendPacket(request, &response))
         {
@@ -164,10 +264,26 @@ int main(int argc,char* argv[])
             return 1;
         }
 
-        std::cout << "[client] tracker_server: "
-                  << tracker_server << std::endl;
-        std::cout << "[client] upload file: " << argv[2] << std::endl;
-        std::cout << "[client] upload is not implemented yet" << std::endl;
+        std::string filename = argv[2];
+
+        std::cout << "[client] upload file: "
+                  << filename << std::endl;
+        
+        /*
+         * 先查询 tracker。
+         *
+         * 注意：
+         * 当前只是查询 storage，不读取文件内容。
+         */
+        if(!queryUploadStorage(tracker_host, tracker_port))
+        {
+            return 1;
+        }
+
+        std::cout << "[client] query upload storage success" << std::endl;
+        std::cout << "[client] real file upload is not implemented yet"
+                  << std::endl;
+                
         return 0;
     }
 
