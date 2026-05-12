@@ -10,12 +10,10 @@
  *
  * 表示一个 storage server 节点。
  *
- * tracker 需要记录：
- * 1. 它属于哪个 group
- * 2. 它的 IP 和端口
- * 3. 它的存储路径
- * 4. 最近一次心跳时间
- * 5. 当前是否在线
+ * online = true：tracker 认为它在线
+ * online = false：tracker 认为它已经下线
+ *
+ * last_heartbeat 表示最近一次收到心跳的时间。
  */
 struct StorageNode {
     std::string group_name;
@@ -32,8 +30,9 @@ struct StorageNode {
  *
  * tracker 内部的 storage 节点注册表。
  *
- * Step 5 中它只支持 addOrUpdate。
- * Step 6 中新增 updateHeartbeat，用来刷新 storage 的心跳时间。
+ * Step 7 新增：
+ * 1. 根据心跳时间标记超时节点
+ * 2. 打印当前所有 storage 节点状态
  */
 class StorageRegistry
 {
@@ -60,11 +59,32 @@ public:
     bool updateHeartbeat(const std::string& group_name, const std::string& ip, int port);
 
     /*
+     * 扫描所有 storage 节点。
+     *
+     * 如果：
+     * 当前时间 - last_heartbeat > timeout_seconds
+     *
+     * 就把这个节点标记为 offline。
+     *
+     * 返回值：
+     * 本次被标记为 offline 的节点数量。
+     */
+    int makeTimeoutNodes(int timeout_seconds);
+
+    /*
      * 返回当前所有 storage 节点。
      *
      * 这里返回 vector，是为了后面方便遍历和调试输出。
      */
     std::vector<StorageNode> listALL() const;
+
+    /*
+     * 打印所有 storage 节点状态。
+     *
+     * 这个函数主要用于当前阶段调试。
+     * 后面可以替换成管理命令或者 HTTP 管理接口。
+     */
+    void dumpNodes() const;
 
     /*
      * 返回当前注册节点数量。

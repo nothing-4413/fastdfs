@@ -83,6 +83,28 @@ Packet TrackerService::handlePacket(const Packet&request,const std::string& peer
     }
 }
 
+
+void TrackerService::checkAlive(int timeout_seconds)
+{
+     /*
+     * 这个函数由后台线程周期性调用。
+     *
+     * 它不处理网络请求，只检查 registry_ 中已有节点的状态。
+     */
+    int offline_count = registry_.makeTimeoutNodes(timeout_seconds);
+
+    if(offline_count > 0)
+    {
+        std::cout << "[tracker] check alive, offline nodes=" << offline_count << std::endl;
+    }
+
+    /*
+     * 每次检查后打印当前节点状态，方便学习和调试。
+     * 后面项目稳定后，可以删除这行或改成 debug 日志。
+     */
+    registry_.dumpNodes();
+}
+
 Packet TrackerService::handlePing(const Packet& request)
 {
     (void)request;

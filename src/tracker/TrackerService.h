@@ -10,10 +10,11 @@
  *
  * tracker 的业务处理层。
  *
- * 目前支持：
- * 1. PING
- * 2. STORAGE_JOIN
- * 3. STORAGE_HEARTBEAT
+ * Step 7 新增：
+ * checkAlive()
+ *
+ * 它由 tracker_main 中的后台线程周期性调用，
+ * 用来检查 storage 是否超时未发送心跳。
  */
 class TrackerService {
 public:
@@ -26,6 +27,15 @@ public:
      * 返回一个响应包。
      */
     Packet handlePacket(const Packet& request, const std::string& peer_ip);
+
+    /*
+     * 检查 storage 存活状态。
+     *
+     * timeout_seconds：
+     * 如果某个 storage 超过 timeout_seconds 秒没有心跳，
+     * 就将它标记为 offline。
+     */
+    void checkAlive(int timeout_seconds);
 
 private:
     /*

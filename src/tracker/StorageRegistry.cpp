@@ -1,7 +1,8 @@
 #include "tracker/StorageRegistry.h"
 
-#include <sstream>
 #include <ctime>
+#include <iostream>
+#include <sstream>
 
 std::string StorageRegistry::makeKey(const StorageNode& node) {
     return makeKey(node.group_name, node.ip, node.port);
@@ -66,6 +67,49 @@ bool StorageRegistry::updateHeartbeat(const std::string& group_name,const std::s
 
 }
 
+int StorageRegistry::makeTimeoutNodes(int timeout_seconds)
+{
+    int offline_count = 0;
+    std::time_t now = std::time(nullptr);
+
+    for(std::unordered_map<std::string, StorageNode>::iterator it = nodes_.begin(); it != nodes_.end(); ++it) {
+        StorageNode& node = it->second;
+
+        /*
+         * 如果节点已经是 offline，就不重复统计。
+         */
+        if(!node.online) {
+            continue;
+        }
+
+         /*
+         * 判断是否超时。
+         *
+         * 例如：
+         * timeout_seconds = 15
+         *
+         * 如果当前时间比最近一次心跳晚了超过 15 秒，
+         * tracker 就认为 storage 已经失联。
+         */
+        double diff = std::difftime(now, node.last_heartbeat);
+
+        if(diff > timeout_seconds) {
+            node.online = false;
+            ++offline_count;
+
+            std::cout << "[tracker] storage offline"
+                      << ", group=" << node.group_name
+                      << ", ip=" << node.ip
+                      << ", port=" << node.port
+                      << ", last_heartbeat=" << node.last_heartbeat
+                      << ", now=" << now
+                      << ", diff=" << diff
+                      << std::endl;
+        }
+        return offline_count;
+    }
+}
+
 std::vector<StorageNode> StorageRegistry::listALL() const
 {
     std::vector<StorageNode> result;
@@ -74,6 +118,23 @@ std::vector<StorageNode> StorageRegistry::listALL() const
         result.push_back(it->second);
     }
     return result;
+}
+
+void StorageRegistry::dumpNodes() const
+{
+    std::cout << "[tracker] storage registry dump, total="
+              << nodes_.size() << std::endl;
+
+    for(std::unordered_map<std::string, StorageNode>::const_iterator it = nodes_.begin(); it != nodes_.end(); ++it) {
+        const StorageNode& node = it->second;
+
+        std::cout << "  - group: " << node.group_name
+                  << ", ip: " << node.ip
+                  << ", port: " << node.port
+                  << ", online: " << (node.online ? "yes" : "no")
+                  << ", last_heartbeat: " << node.last_heartbeat
+                  << std::endl;
+    }
 }
 
 std::size_t StorageRegistry::size() const

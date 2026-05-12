@@ -2,27 +2,29 @@
 #include "net/TcpServer.h"
 #include "tracker/TrackerService.h"
 
+#include <chrono>
 #include <functional>
 #include <iostream>
 #include <string>
+#include <thread>
 
 /*
  * tracker_main.cpp
  *
- * Step 5：
+ * Step 7：
  *
- * tracker_server 不再直接处理网络包。
- * 它会创建 TrackerService，并把 TrackerService::handlePacket
- * 注册到 TcpServer 里。
+ * tracker 启动后台线程，周期性检查 storage 是否超时。
  *
- * 结构：
+ * 当前超时规则：
  *
- * TcpServer
- *   ↓ 收包
- * TrackerService
- *   ↓ 根据 cmd 处理业务
- * StorageRegistry
- *   ↓ 保存 storage 节点
+ * storage_timeout = check_active_interval * 3
+ *
+ * 例如：
+ * check_active_interval = 10
+ * storage_timeout = 30
+ *
+ * 如果某个 storage 超过 30 秒没有心跳，
+ * tracker 就把它标记为 offline。
  */
 
 int main(int argc, char* argv[])
@@ -93,6 +95,15 @@ int main(int argc, char* argv[])
      */
     int check_active_interval = config.getInt("check_active_interval", 10);
 
+     /*
+     * storage 超时时间。
+     *
+     * 为了简单，我们先设为 check_active_interval * 3。
+     *
+     * 也就是说：
+     * 如果连续 3 个检查周期都没有心跳，就认为 storage 下线。
+     */
+    int storage_timeout = check_active_interval * 3;
 
     std::cout << "[tracker] starting..." << std::endl;
     std::cout << "[tracker] config: " << conf_path << std::endl;
@@ -101,6 +112,7 @@ int main(int argc, char* argv[])
     std::cout << "[tracker] store_lookup: " << store_lookup << std::endl;
     std::cout << "[tracker] check_active_interval: "
               << check_active_interval << std::endl;
+    std::cout << "[tracker] storage_timeout: " << storage_timeout << std::endl;
 
     /*
      * 创建 tracker 业务服务对象。
@@ -110,6 +122,37 @@ int main(int argc, char* argv[])
      * 因为 TcpServer 回调里会使用它。
      */
     TrackerService service;
+
+    /*
+     * 启动后台线程做存活检查。
+     *
+     * 注意：
+     * 这里使用引用捕获 [&service]。
+     * 因为 service 在 main 函数栈上创建，
+     * 后台线程需要访问同一个 service 对象。
+     */
+    std::thread checker([&service, check_active_interval, storage_timeout](){
+        while(true)
+        {
+            std::this_thread::sleep_for(
+                std::chrono::seconds(check_active_interval)
+            );
+
+            std::cout << "[tracker] run checkAlive..." << std::endl;
+
+            service.checkAlive(storage_timeout);
+        }
+    });
+
+    /*
+     * detach 表示让这个线程在后台独立运行。
+     *
+     * 当前项目主线程会进入 server.start() 死循环，
+     * 所以 checker 会一直跟着进程运行。
+     *
+     * 后面做优雅退出时，可以改成 join + stop flag。
+     */
+    checker.detach();
 
     /*
      * 创建 TCP 服务端。
