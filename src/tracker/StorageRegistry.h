@@ -10,17 +10,12 @@
  *
  * 表示一个 storage server 节点。
  *
- * 在 FastDFS 架构中，tracker 要知道有哪些 storage 存在，
- * 每个 storage 属于哪个 group，监听哪个端口，是否在线。
- *
- * 当前阶段先保存最核心的信息：
- * 1. group_name
- * 2. ip
- * 3. port
- * 4. base_path
- * 5. store_path0
- * 6. last_heartbeat
- * 7. online
+ * tracker 需要记录：
+ * 1. 它属于哪个 group
+ * 2. 它的 IP 和端口
+ * 3. 它的存储路径
+ * 4. 最近一次心跳时间
+ * 5. 当前是否在线
  */
 struct StorageNode {
     std::string group_name;
@@ -35,32 +30,41 @@ struct StorageNode {
 /*
  * StorageRegistry
  *
- * tracker 内部维护的 storage 节点注册表。
+ * tracker 内部的 storage 节点注册表。
  *
- * 当前只存在内存里。
- * 后面可以继续扩展：
- * 1. 定期持久化到 data/tracker/storage_status.dat
- * 2. 支持 storage 下线检测
- * 3. 支持按 group 查询 storage
- * 4. 支持负载均衡选择 storage
+ * Step 5 中它只支持 addOrUpdate。
+ * Step 6 中新增 updateHeartbeat，用来刷新 storage 的心跳时间。
  */
-class StorgeRegistry
+class StorageRegistry
 {
 public:
-    /*
+     /*
      * 添加或更新 storage 节点。
      *
-     * 如果这个 storage 是第一次注册，就新增。
-     * 如果已经存在，就更新信息和心跳时间。
+     * STORAGE_JOIN 时调用。
      */
-    void addOrUpdate(const StorgeNode& node);
+    void addOrUpdate(const StorageNode& node);
+
+    /*
+     * 更新 storage 心跳。
+     *
+     * 参数：
+     * group_name：storage 所属 group
+     * ip：storage 的 IP
+     * port：storage 的端口
+     *
+     * 返回：
+     * true 表示找到了节点并成功更新
+     * false 表示这个 storage 没有注册过
+     */
+    bool updateHeartbeat(const std::string& group_name, const std::string& ip, int port);
 
     /*
      * 返回当前所有 storage 节点。
      *
      * 这里返回 vector，是为了后面方便遍历和调试输出。
      */
-    std::vector<StorgeNode> listALL() const;
+    std::vector<StorageNode> listALL() const;
 
     /*
      * 返回当前注册节点数量。
@@ -77,9 +81,16 @@ private:
      * 例如：
      * group1@127.0.0.1:23000
      */
-    static std::string makeKey(const StorgeNode& node);
+    static std::string makeKey(const StorageNode& node);
+
+    /*
+     * 根据 group_name + ip + port 生成唯一 key。
+     *
+     * 这个重载给 updateHeartbeat 使用。
+     */
+    static std::string makeKey(const std::string& group_name, const std::string& ip, int port);
 
 private:
-    std::unordered_map<std::string, StorgeNode> nodes_;
+    std::unordered_map<std::string, StorageNode> nodes_;
 }
 

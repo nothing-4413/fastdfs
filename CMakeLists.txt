@@ -15,6 +15,8 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 #代码可以写#include "common/Config.h"
 include_directories(${PROJECT_SOURCE_DIR}/src)
 
+find_package(Threads REQUIRED)
+
 set(COMMON_SRC
     src/common/Config.cpp
 )
@@ -55,3 +57,7 @@ add_executable(fdfs_cli
     ${PROTOCOL_SRC}
     ${NET_SRC}
 )
+
+target_link_libraries(tracker_server PRIVATE Threads::Threads)
+target_link_libraries(storage_server PRIVATE Threads::Threads)
+target_link_libraries(fdfs_cli PRIVATE Threads::Threads)

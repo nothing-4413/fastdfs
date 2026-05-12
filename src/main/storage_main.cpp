@@ -3,18 +3,24 @@
 #include "protocol/Command.h"
 #include "protocol/Protocol.h"
 
+#include <chrono>
 #include <iostream>
 #include <sstream>
 #include <string>
+#include <thread> 
 
 /*
  * storage_main.cpp
  *
- * Step 5：
+ * Step 6：
  *
- * storage_server 启动后不再只是读取配置。
- * 它会主动连接 tracker_server，并发送 STORAGE_JOIN 注册包。
+ * storage_server 启动后：
+ * 1. 读取 storage.conf
+ * 2. 向 tracker 发送 STORAGE_JOIN
+ * 3. 注册成功后进入循环
+ * 4. 每隔 heart_beat_interval 秒发送 STORAGE_HEARTBEAT
  */
+
 static bool parseHoppstPort(const std::string& address, std::string* host, int* port)
 {
     std::size_t pos = address.find(':');
@@ -59,6 +65,89 @@ static std::string buildStorageJoinBody(const std::string& group_name,
     oss << "store_path0=" << store_path0 << "\n";
 
     return oss.str();
+}
+
+/*
+ * 构造 STORAGE_HEARTBEAT 请求 body。
+ *
+ * 心跳不需要重复发送所有信息。
+ * 当前只发送 tracker 能识别节点所需的最小信息：
+ *
+ * group_name + port
+ *
+ * ip 由 tracker 从 TCP 连接对端地址中获取。
+ */
+static std::string buildHeartbeatBody(const std::string& group_name,int port)
+{
+  std::ostringstream oss;
+
+    oss << "group_name=" << group_name << "\n";
+    oss << "port=" << port << "\n";
+
+    return oss.str();
+}
+
+static bool sendStorageJoin(const std::string& tracker_host, int tracker_port,
+                         const std::string& group_name, int storage_port,
+                         const std::string& base_path, const std::string& store_path0)
+{
+    TcpClient client(tracker_host, tracker_port);
+
+    std::string body = buildStorageJoinBody(
+        group_name,
+        storage_port,
+        base_path,
+        store_path0
+    );
+
+    Packet request = Protocol::makePacket(
+        Command::STORAGE_JOIN,
+        Status::OK,
+        body
+    );
+
+    Packet response;
+
+    if(!client.sendPacket(request, &response))
+    {
+        std::cerr << "[storage] join tracker failed" << std::endl;
+        return false;
+    }
+
+    std::cout << "[storage] join response status: "
+              << static_cast<int>(response.header.status) << std::endl;
+    std::cout << "[storage] join response body: "
+              << response.body << std::endl;
+
+    return response.header.status == Status::OK;
+}
+
+static bool sendHeartbeat(const std::string& tracker_host, int tracker_port,
+                          const std::string& group_name, int storage_port)
+{
+    TcpClient client(tracker_host, tracker_port);
+
+    std::string body = buildHeartbeatBody(group_name, storage_port);
+
+    Packet request = Protocol::makePacket(
+        Command::STORAGE_HEARTBEAT,
+        Status::OK,
+        body
+    );
+
+    Packet response;
+
+    if(!client.sendPacket(request, &response))
+    {
+        std::cerr << "[storage] send heartbeat failed" << std::endl;
+        return false;
+    }
+
+    std::cout << "[storage] heartbeat response status: "
+              << static_cast<int>(response.header.status)
+              << ", body: " << response.body << std::endl;
+
+    return response.header.status == Status::OK;
 }
 
  int main(int argc,char* argv[])
@@ -173,49 +262,38 @@ static std::string buildStorageJoinBody(const std::string& group_name,
     }
 
     /*
-     * 创建到 tracker 的客户端连接对象。
+     * 第一步：先注册。
+     *
+     * 如果注册失败，不应该进入心跳循环。
      */
-    TcpClient client(tracker_host, tracker_port);
+    if(!sendStorageJoin(tracker_host, tracker_port,
+                        group_name, port, base_path, store_path0))
+      {
+          return 1;
+      }
+
+    std::cout << "[storage] join tracker success" << std::endl;
 
     /*
-     * 构造 STORAGE_JOIN 请求 body。
+     * 第二步：循环发送心跳。
+     *
+     * 当前为了学习清晰，使用单线程 while(true)。
+     *
+     * 后面 storage 需要同时监听客户端上传/下载，
+     * 那时会把心跳放到独立线程里。
      */
-    std::string body = buildStorageJoinBody(
-        group_name,
-        port,
-        base_path,
-        store_path0
-    );
-
-    /*
-     * 构造 STORAGE_JOIN 包。
-     */
-    Packet request = Protocol::makePacket(
-        Command::STORAGE_JOIN,
-        Status::OK,
-        body
-    );
-
-    Packet response;
-
-    /*
-     * 发送注册包给 tracker。
-     */
-    if(!client.sendPacket(request, &response))
+    while(true)
     {
-        std::cerr << "[storage] join tracker failed" << std::endl;
-        return 1;
+        std::this_thread::sleep_for(std::chrono::seconds(heart_beat_interval));
+
+        bool ok = sendHeartbeat(tracker_host, tracker_port, group_name, port);
+
+        if(!ok)
+        {
+            std::cerr << "[storage] heartbeat failed" << std::endl;
+        }
     }
 
-    std::cout << "[storage] join response status: "
-              << static_cast<int>(response.header.status) << std::endl;
-    std::cout << "[storage] join response body: "
-              << response.body << std::endl;
-              
-    /*
-     * 当前 Step 5 注册成功后直接退出。
-     *
-     * 下一步 Step 6 会让 storage 保持运行，并定期发送 heartbeat。
-     */
-   return 0;
+    return 0;
+    
 }
