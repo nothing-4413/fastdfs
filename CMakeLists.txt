@@ -49,6 +49,7 @@ add_executable(storage_server
     ${COMMON_SRC}
     ${PROTOCOL_SRC}
     ${NET_SRC}
+    ${STORAGE_SRC}
 )
 
 add_executable(fdfs_cli

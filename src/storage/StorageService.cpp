@@ -1,0 +1,150 @@
+#include "storage/StorageService.h"
+
+#include "protocol/Command.h"
+#include "protocol/Protocol.h"
+
+#include <ctime>
+#include <fstream>
+#include <iostream>
+#include <sstream>
+#include <sys/stat.h>
+#include <sys/types.h>
+
+StorageService::StorageService(const std::string& group_name,
+                               const std::string& store_path0)
+    : group_name_(group_name),
+      store_path0_(store_path0) {
+}
+
+Packet StorageService::handlePacket(const Packet& request
+                                    const std::string& peer_ip)
+{
+    (void)peer_ip; // Unused parameter
+
+    if(request.header.cmd == Command::UPLOAD) {
+        return handleUpload(request);
+    } 
+
+    return Protocol::makePacket(
+        Command::RESPONSE,
+        Status::ERROR,
+        "unknown storage command"
+    );
+}
+
+bool StorageService:parseUploadBody(const std::string& body,
+                                    std::string& filename,
+                                    std::string& content) const
+{
+    if(filename == nullptr || content == nullptr) {
+        return false;
+    }
+
+    cosnt std::string filename_key = "filename=";
+    cosnt std::string content_key = "\ncontent=";
+
+   id(body.find(filename_key) != 0) {
+        return false;
+    }
+
+    std::size_t content_pos = body.find(content_key);
+    if(content_pos == std::string::npos) {
+        return false;
+    }
+
+    *filename = body.substr(filename_key.size(), content_pos - filename_key.size());
+    *content = body.substr(content_pos + content_key.size());
+
+    return !filename->empty();
+}
+
+std::string StorageService::getStorePath(const std::string& filename) const
+{
+    std::ostringstream oss;
+
+    oss << group_name;
+        << "/M00/00/00/"
+        << std::time(nullptr)
+        << "_"
+        << filename;
+
+    return oss.str();
+}
+
+std::string StorageService::buildRealPath(const std::string& file_id) const{
+    std::string prefix = group_name_+"/";
+
+    std::string relative_path = file_id;
+
+    if(relative_path.find(prefix)==0)
+    {
+        relative_path = relative_path.substr(prefix.size());
+    }
+
+    return store_path0_+"/" + relative_path;
+}
+
+bool StorageService::writeFile(const std::string& real_path,const std::string& content)const
+{
+     /*
+     * 当前阶段固定创建 M00/00/00 目录。
+     * 后面文件分布策略会改成动态目录。
+     */
+    mkdir((store_path0_ + "/M00").c_str(), 0755);
+    mkdir((store_path0_ + "/M00/00").c_str(), 0755);
+    mkdir((store_path0_ + "/M00/00/00").c_str(), 0755);
+
+    std::ofstream output(real_path.c_str(),std::ios::binary);
+    if(!output.is_open())
+    {
+        std::cerr <<"[storage] open file failed: "
+                  <<real_path <<std::endl;
+        return false;
+    }
+
+    output.write(content.data(),static_cast<std::streamsize>(content.size()));
+
+    return output.good();
+}
+
+Packet StorageService::handleUploadFil(const Packet& request)
+{
+    std::string filename;
+    std::string content;
+
+    if(!parseUploadBody(request.body,&filename,&content))
+    {
+        return Protcool::makePacket(
+               Command::RESPONSE,
+               Status::ERROR,
+               "bad upload body"
+        );
+    }
+
+    std::string file_id = generateFileId(filename);
+    std::string real_path = buildRealPath(file_id);
+
+    if(!writeFile(real_path,content))
+    {
+        return  Protocol::makePacket(
+            Command::RESPONSE,
+            Status::ERROR,
+            "write file failed"
+        );
+    }
+
+    std::cont << "[storage] upload success"
+              << ", filename=" << filename
+              << ", file_id=" << file_id
+              << ", real_path=" << real_path
+              << ", size=" << content.size()
+              << std::endl;
+
+    std::string response_body = "file_id=" + file_id + "\n";
+
+    return Protocol::makePacket(
+        Command::RESPONSE,
+        Status::OK,
+        response_body
+    );
+}

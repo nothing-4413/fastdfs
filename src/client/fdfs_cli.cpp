@@ -1,6 +1,7 @@
 #include <iostream>
 #include <sstream>
 #include <string>
+#include <fstream>
 #include <unordered_map>
 
 #include "common/Config.h"
@@ -27,6 +28,12 @@
  * 注意：
  * 这一节还没有真正连接 storage 上传文件。
  */
+
+struct SelectStorage{
+    std::string group_name;
+    std::string ip;
+    int port;
+}
 
 static bool parseHostPort(const std::string& address,std::string* host,int* port)
 {
@@ -96,8 +103,24 @@ static std::unordered_map<std::string,std::string> parseKeyValueBody(const std::
  * 向 tracker 查询一个可用于上传的 storage。
  */
 static bool queryUploadStorage(const std::string& tracker_host,
-                               int tracker_port)
+                               int tracker_port,SelectedStorage* selected)
 {
+    if (selected == nullptr) {
+    return false;
+    }
+
+    selected->group_name = kv["group_name"];
+    selected->ip = kv["ip"];
+
+    try {
+            selected->port = std::stoi(kv["port"]);
+    } 
+    catch (...) {
+    std::cerr << "[client] invalid storage port: "
+              << kv["port"] << std::endl;
+    return false;
+    }
+
     TcpClient client(tracker_host,tracker_port);
 
     /*
@@ -143,6 +166,80 @@ static bool queryUploadStorage(const std::string& tracker_host,
     std::cout << "  port: " << kv["port"] << std::endl;
 
     return true;
+}
+
+static bool readFileContent(const std::string& filename,std::string* content)
+{
+    if(content == nullptr) {
+        return false;
+    }
+
+    std::ifstream input(filename.c_str(),std::ios::binary);
+    if(!input.is_open()) {
+        std::cerr << "[client] open local file failed: "
+                  << filename << std::endl;
+        return false;
+    }
+
+    std::ostringstream buffer;
+    buffer << input.rdbuf();
+
+    *content = buffer.str();
+    return true;
+}
+
+static std::string basenameOf(const std::string& path)
+{
+    std::size_t pos = path.find_last_of('/');
+
+    if (pos == std::string::npos) {
+        return path;
+    }
+
+    return path.substr(pos + 1);
+}
+
+static bool uploadFIleToStorage(const SelectedStorage& storage,const std::string& local_file)
+{
+    std::String content;
+
+    if(!readFileContent(local_file, &content)) {
+        return false;
+    }
+
+    std::string filename = basenameOf(local_file);
+
+    std::ostringstream body;
+    body << "filename=" << filename << "\n";
+    body << "content=" << content;
+
+    TcpClient client(storage.ip,storage.port);
+
+    Packet request = Protocol::makePacket(
+        Command::UPLOAD_FILE,
+        Status::OK,
+        body.str()
+    );
+
+    Packet response;
+
+     if (!client.sendPacket(request, &response)) {
+        std::cerr << "[client] upload file to storage failed"
+                  << std::endl;
+        return false;
+    }
+
+    if (response.header.status != Status::OK) {
+        std::cerr << "[client] storage returned error: "
+                  << response.body << std::endl;
+        return false;
+    }
+
+    std::cout << "[client] upload success" << std::endl;
+    std::cout << response.body;
+
+    return true;
+
 }
 
 int main(int argc,char* argv[])
@@ -269,21 +366,29 @@ int main(int argc,char* argv[])
         std::cout << "[client] upload file: "
                   << filename << std::endl;
         
+        SelectedStorage selected;
+
+
         /*
          * 先查询 tracker。
          *
          * 注意：
          * 当前只是查询 storage，不读取文件内容。
          */
-        if(!queryUploadStorage(tracker_host, tracker_port))
+        if(!queryUploadStorage(tracker_host, tracker_port,&selected))
         {
             return 1;
         }
 
-        std::cout << "[client] query upload storage success" << std::endl;
-        std::cout << "[client] real file upload is not implemented yet"
-                  << std::endl;
+        std::cout << "[client] selected storage:" << std::endl;
+        std::cout << "  group_name: " << selected.group_name << std::endl;
+        std::cout << "  ip: " << selected.ip << std::endl;
+        std::cout << "  port: " << selected.port << std::endl;
                 
+        if(!uploadFileToStorage(selected, filename)) {
+        return 1;
+        }
+
         return 0;
     }
 

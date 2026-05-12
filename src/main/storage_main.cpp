@@ -8,6 +8,10 @@
 #include <sstream>
 #include <string>
 #include <thread> 
+#include "net/TcpServer.h"
+#include "storage/StorageService.h"
+
+#include <functional>
 
 /*
  * storage_main.cpp
@@ -282,6 +286,7 @@ static bool sendHeartbeat(const std::string& tracker_host, int tracker_port,
      * 后面 storage 需要同时监听客户端上传/下载，
      * 那时会把心跳放到独立线程里。
      */
+    std::thread heartbeat_thread([=](){
     while(true)
     {
         std::this_thread::sleep_for(std::chrono::seconds(heart_beat_interval));
@@ -293,7 +298,28 @@ static bool sendHeartbeat(const std::string& tracker_host, int tracker_port,
             std::cerr << "[storage] heartbeat failed" << std::endl;
         }
     }
+  });
 
-    return 0;
+  heartbeat_thread.detach();
+
+  StorageService storage_service(group_name,store_path0);
+
+  TcpServer server("0.0.0.0", storage_port);
+
+  server.setPacketHandler(
+    std::bind(&StorageService::handlePacket,
+              &storage_service,
+              std::placeholders::_1,
+              std::placeholders::_2)
+  );
+
+  std::const  << "[storage] start storage tcp server on port "
+              << storage_port << std::endl;
+
+  if(!server.start())
+  {
+      std::cerr << "[storage] start tcp server failed" << std::endl;
+      return 1;
+  }
     
 }
