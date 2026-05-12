@@ -98,6 +98,22 @@ public:
      */
     bool selectUploadStorge(const std::string& group_name,StorageNode* selected)const;
     
+    /*
+    * 选择一个可用于下载的 storage。
+    *
+    * 参数：
+    * group_name：从 file_id 中解析出的 group，例如 group1
+    * selected：输出参数，保存被选中的 storage
+    *
+    * 返回：
+    * true：找到可用 storage
+    * false：没有可用 storage
+    *
+    * 当前策略：
+    * 从指定 group 中选择第一个 online storage。
+    */
+    bool selectDownloadStorage(const std::string& group_name,
+                            StorageNode* selected) const;
 
     /*
      * 返回当前所有 storage 节点。

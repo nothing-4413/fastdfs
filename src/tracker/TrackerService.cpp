@@ -76,6 +76,26 @@ static std::string buildStorageResponseBody(const StorgeNode& node)
 
     return oss.str();
 }
+
+/*
+ * 从 file_id 中解析 group_name。
+ *
+ * file_id:
+ * group1/M00/00/00/xxx.txt
+ *
+ * 返回：
+ * group1
+ */
+static std::string parseGroupFromFileId(const std::string& file_id) {
+    std::size_t pos = file_id.find('/');
+
+    if (pos == std::string::npos) {
+        return "";
+    }
+
+    return file_id.substr(0, pos);
+}
+
 Packet TrackerService::handlePacket(const Packet&request,const std::string& peer_ip)
 {
      /*
@@ -97,6 +117,9 @@ Packet TrackerService::handlePacket(const Packet&request,const std::string& peer
 
         case Command::QUERY_UPLOAD_STORAGE:
             return handleQueryUploadStorage(request);
+
+        case Command::QUERY_DOWNLOAD_STORAGE:
+            return handleQueryDownloadStorage(request);
 
         default:
             return Protocol::makePacket(
@@ -355,4 +378,65 @@ bool TrackerService::parseStorageHeartbeatBodey(const std::string& body,std::str
     }
 
     return true;
+}
+
+Packet TrackerService::handleQueryDownloadStorage(const Packet& request)
+{
+    /*
+     * request.body 格式：
+     * file_id=group1/M00/00/00/xxx.txt
+     */
+    std::unordered_map<std::string, std::string> kv =
+        parseKeyValueBody(request.body);
+
+    if (kv.find("file_id") == kv.end()) {
+        return Protocol::makePacket(
+            Command::RESPONSE,
+            Status::ERROR,
+            "missing file_id"
+        );
+    }
+
+    std::string file_id = kv["file_id"];
+    std::string group_name = parseGroupFromFileId(file_id);
+
+    if (group_name.empty()) {
+        return Protocol::makePacket(
+            Command::RESPONSE,
+            Status::ERROR,
+            "bad file_id"
+        );
+    }
+
+    StorageNode selected;
+
+    bool ok = registry_.selectDownloadStorage(group_name, &selected);
+
+    if (!ok) {
+        std::cout << "[tracker] query download storage failed"
+                  << ", file_id=" << file_id
+                  << ", group=" << group_name
+                  << std::endl;
+
+        return Protocol::makePacket(
+            Command::RESPONSE,
+            Status::ERROR,
+            "no available storage for download"
+        );
+    }
+
+    std::string body = buildStorageResponseBody(selected);
+
+    std::cout << "[tracker] query download storage success"
+              << ", file_id=" << file_id
+              << ", group=" << selected.group_name
+              << ", ip=" << selected.ip
+              << ", port=" << selected.port
+              << std::endl;
+
+    return Protocol::makePacket(
+        Command::RESPONSE,
+        Status::OK,
+        body
+    );
 }

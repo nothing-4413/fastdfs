@@ -21,9 +21,13 @@ Packet StorageService::handlePacket(const Packet& request
 {
     (void)peer_ip; // Unused parameter
 
-    if(request.header.cmd == Command::UPLOAD) {
-        return handleUpload(request);
+    if(request.header.cmd == Command::UPLOAD_FILE) {
+        return handleUploadFile(request);
     } 
+
+    if (request.header.cmd == Command::DOWNLOAD_FILE) {
+        return handleDownloadFile(request);
+    }
 
     return Protocol::makePacket(
         Command::RESPONSE,
@@ -146,5 +150,85 @@ Packet StorageService::handleUploadFil(const Packet& request)
         Command::RESPONSE,
         Status::OK,
         response_body
+    );
+}
+
+bool StorageService::parseDownloadBody(const std::string& body,
+                                       std::string* file_id) const 
+{
+    if (file_id == nullptr) {
+        return false;
+    }
+
+    const std::string key = "file_id=";
+
+    if (body.find(key) != 0) {
+        return false;
+    }
+
+    *file_id = body.substr(key.size());
+
+    return !file_id->empty();
+}
+
+bool StorageService::readFile(const std::string& real_path,
+                              std::string* content) const {
+    if (content == nullptr) {
+        return false;
+    }
+
+    std::ifstream input(real_path.c_str(), std::ios::binary);
+    if (!input.is_open()) {
+        std::cerr << "[storage] open file for read failed: "
+                  << real_path << std::endl;
+        return false;
+    }
+
+    std::ostringstream buffer;
+    buffer << input.rdbuf();
+
+    *content = buffer.str();
+
+    return true;
+}
+
+Packet StorageService::handleDownloadFile(const Packet& request) {
+    std::string file_id;
+
+    if (!parseDownloadBody(request.body, &file_id)) {
+        return Protocol::makePacket(
+            Command::RESPONSE,
+            Status::ERROR,
+            "bad download body"
+        );
+    }
+
+    std::string real_path = buildRealPath(file_id);
+
+    std::string content;
+
+    if (!readFile(real_path, &content)) {
+        return Protocol::makePacket(
+            Command::RESPONSE,
+            Status::ERROR,
+            "read file failed"
+        );
+    }
+
+    std::cout << "[storage] download success"
+              << ", file_id=" << file_id
+              << ", real_path=" << real_path
+              << ", size=" << content.size()
+              << std::endl;
+
+    /*
+     * 当前学习版直接把文件内容放在 response.body。
+     *
+     * 后面支持大文件时，需要改成分块发送。
+     */
+    return Protocol::makePacket(
+        Command::RESPONSE,
+        Status::OK,
+        content
     );
 }

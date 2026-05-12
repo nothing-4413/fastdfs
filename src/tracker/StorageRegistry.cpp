@@ -173,3 +173,46 @@ std::size_t StorageRegistry::size() const
 {
     return nodes_.size();
 }
+
+bool StorageRegistry::selectDownloadStorage(const std::string& group_name,StorageNode* selected)const
+{
+    if (selected == nullptr) {
+        return false;
+    }
+
+    /*
+     * 下载时必须知道 group。
+     * 因为 file_id 格式是：
+     * group1/M00/00/00/xxx.txt
+     */
+    if (group_name.empty()) {
+        return false;
+    }
+
+    /*
+     * 当前简化策略：
+     * 找到同 group 下第一个 online storage。
+     *
+     * 后面做副本同步后，同一个 group 内多个 storage 都应该有同一份文件。
+     */
+    for(std::unordered_map<std::string, StorageNode>::const_iterator it =
+             nodes_.begin();
+         it != nodes_.end();
+         ++it)
+    {
+        const StorageNode* node = it->second;
+
+        if (!node.online) {
+            continue;
+        }
+
+        if (node.group_name != group_name) {
+            continue;
+        }
+
+        *selected = node;
+        return true;
+    }
+
+    return false;
+}

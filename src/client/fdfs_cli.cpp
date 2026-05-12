@@ -407,11 +407,33 @@ int main(int argc,char* argv[])
             return 1;
         }
 
-        std::cout << "[client] tracker_server: "
-                  << tracker_server << std::endl;
-        std::cout << "[client] download file_id: " << argv[2] << std::endl;
-        std::cout << "[client] output: " << argv[3] << std::endl;
-        std::cout << "[client] download is not implemented yet" << std::endl;
+        std::string file_id = argv[2];
+        std::string output = argv[3];
+
+        std::cout << "[client] download file_id: "
+                << file_id << std::endl;
+        std::cout << "[client] output: "
+                << output << std::endl;
+
+        SelectedStorage selected;
+
+        if (!queryDownloadStorage(tracker_host,
+                                tracker_port,
+                                file_id,
+                                &selected)) {
+            return 1;
+        }
+
+        std::cout << "[client] selected storage:" << std::endl;
+        std::cout << "  group_name: " << selected.group_name << std::endl;
+        std::cout << "  ip: " << selected.ip << std::endl;
+        std::cout << "  port: " << selected.port << std::endl;
+
+        if (!downloadFileFromStorage(selected, file_id, output)) {
+            return 1;
+        }
+
+        return 0;
     }
 
     /*
@@ -419,4 +441,152 @@ int main(int argc,char* argv[])
      */
     std::cerr << "unknown command: " << command << std::endl;
     return 1;
+}
+
+/*
+ * 向 tracker 查询下载 file_id 对应的 storage。
+ *
+ * 参数：
+ * tracker_host：tracker IP
+ * tracker_port：tracker 端口
+ * file_id：要下载的文件 ID
+ * selected：输出参数，保存 tracker 返回的 storage
+ *
+ * 返回：
+ * true：查询成功
+ * false：查询失败
+ */
+static bool queryDownloadStorage(const std::string& tracker_host,
+                                 int tracker_port,
+                                 const std::string& file_id,
+                                 SelectedStorage* selected) {
+    if (selected == nullptr) {
+        return false;
+    }
+
+    TcpClient client(tracker_host, tracker_port);
+
+    std::string body = "file_id=" + file_id;
+
+    Packet request = Protocol::makePacket(
+        Command::QUERY_DOWNLOAD_STORAGE,
+        Status::OK,
+        body
+    );
+
+    Packet response;
+
+    if (!client.sendPacket(request, &response)) {
+        std::cerr << "[client] query download storage failed"
+                  << std::endl;
+        return false;
+    }
+
+    if (response.header.status != Status::OK) {
+        std::cerr << "[client] tracker returned error: "
+                  << response.body << std::endl;
+        return false;
+    }
+
+    std::unordered_map<std::string, std::string> kv =
+        parseKeyValueBody(response.body);
+
+    if (kv.find("group_name") == kv.end() ||
+        kv.find("ip") == kv.end() ||
+        kv.find("port") == kv.end()) {
+        std::cerr << "[client] bad tracker response body: "
+                  << response.body << std::endl;
+        return false;
+    }
+
+    selected->group_name = kv["group_name"];
+    selected->ip = kv["ip"];
+
+    try {
+        selected->port = std::stoi(kv["port"]);
+    } catch (...) {
+        std::cerr << "[client] invalid storage port: "
+                  << kv["port"] << std::endl;
+        return false;
+    }
+
+    return true;
+}
+
+/*
+ * 把下载到的内容写入本地文件。
+ *
+ * 参数：
+ * output：输出文件路径
+ * content：文件内容
+ *
+ * 返回：
+ * true：写入成功
+ * false：写入失败
+ */
+static bool writeLocalFile(const std::string& output,
+                           const std::string& content) {
+    std::ofstream file(output.c_str(), std::ios::binary);
+
+    if (!file.is_open()) {
+        std::cerr << "[client] open output file failed: "
+                  << output << std::endl;
+        return false;
+    }
+
+    file.write(content.data(),
+               static_cast<std::streamsize>(content.size()));
+
+    return file.good();
+}
+
+/*
+ * 从 storage 下载文件。
+ *
+ * 参数：
+ * storage：tracker 返回的 storage 节点
+ * file_id：文件 ID
+ * output：本地输出路径
+ *
+ * 返回：
+ * true：下载成功
+ * false：下载失败
+ */
+static bool downloadFileFromStorage(const SelectedStorage& storage,
+                                    const std::string& file_id,
+                                    const std::string& output) {
+    TcpClient client(storage.ip, storage.port);
+
+    std::string body = "file_id=" + file_id;
+
+    Packet request = Protocol::makePacket(
+        Command::DOWNLOAD_FILE,
+        Status::OK,
+        body
+    );
+
+    Packet response;
+
+    if (!client.sendPacket(request, &response)) {
+        std::cerr << "[client] download from storage failed"
+                  << std::endl;
+        return false;
+    }
+
+    if (response.header.status != Status::OK) {
+        std::cerr << "[client] storage returned error: "
+                  << response.body << std::endl;
+        return false;
+    }
+
+    if (!writeLocalFile(output, response.body)) {
+        return false;
+    }
+
+    std::cout << "[client] download success" << std::endl;
+    std::cout << "[client] output: " << output << std::endl;
+    std::cout << "[client] size: "
+              << response.body.size() << std::endl;
+
+    return true;
 }
