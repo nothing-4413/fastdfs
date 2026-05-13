@@ -9,6 +9,7 @@
 #include <sstream>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <cstdio>
 
 StorageService::StorageService(const std::string& group_name,
                                const std::string& store_path0)
@@ -28,6 +29,10 @@ Packet StorageService::handlePacket(const Packet& request
     if (request.header.cmd == Command::DOWNLOAD_FILE) {
         return handleDownloadFile(request);
     }
+
+    if (request.header.cmd == Command::DELETE_FILE) {
+        return handleDeleteFile(request);
+    }   
 
     return Protocol::makePacket(
         Command::RESPONSE,
@@ -230,5 +235,64 @@ Packet StorageService::handleDownloadFile(const Packet& request) {
         Command::RESPONSE,
         Status::OK,
         content
+    );
+}
+
+bool StorageService::deleteRealFile(const std::string& real_path) const {
+    /*
+     * std::remove 返回 0 表示删除成功。
+     * 非 0 表示删除失败。
+     *
+     * 常见失败原因：
+     * 1. 文件不存在
+     * 2. 权限不足
+     * 3. 路径错误
+     */
+    if (std::remove(real_path.c_str()) != 0) {
+        std::cerr << "[storage] remove file failed: "
+                  << real_path << std::endl;
+        return false;
+    }
+
+    return true;
+}
+
+Packet StorageService::handleDeleteFile(const Packet& request) {
+    std::string file_id;
+
+    /*
+     * 删除请求 body 和下载请求 body 一样：
+     *
+     * file_id=group1/M00/00/00/xxx.txt
+     *
+     * 所以这里复用 parseDownloadBody。
+     */
+    if (!parseDownloadBody(request.body, &file_id)) {
+        return Protocol::makePacket(
+            Command::RESPONSE,
+            Status::ERROR,
+            "bad delete body"
+        );
+    }
+
+    std::string real_path = buildRealPath(file_id);
+
+    if (!deleteRealFile(real_path)) {
+        return Protocol::makePacket(
+            Command::RESPONSE,
+            Status::ERROR,
+            "delete file failed"
+        );
+    }
+
+    std::cout << "[storage] delete success"
+              << ", file_id=" << file_id
+              << ", real_path=" << real_path
+              << std::endl;
+
+    return Protocol::makePacket(
+        Command::RESPONSE,
+        Status::OK,
+        "delete success"
     );
 }

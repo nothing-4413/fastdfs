@@ -260,6 +260,7 @@ int main(int argc,char* argv[])
         std::cerr << "  ping" << std::endl;
         std::cerr << "  upload <file>" << std::endl;
         std::cerr << "  download <file_id> <output>" << std::endl;
+        td::cerr << "  delete <file_id>" << std::endl;
         return 1;
     }
 
@@ -436,6 +437,45 @@ int main(int argc,char* argv[])
         return 0;
     }
 
+    if (command == "delete") {
+        if (argc < 3) {
+            std::cerr << "usage: fdfs_cli delete <file_id>"
+                    << std::endl;
+            return 1;
+        }
+
+        std::string file_id = argv[2];
+
+        std::cout << "[client] delete file_id: "
+                << file_id << std::endl;
+
+        /*
+        * 删除前也要先问 tracker。
+        *
+        * 当前复用 queryDownloadStorage：
+        * 因为 delete 和 download 一样，都是根据 file_id 找到对应 group 的 online storage。
+        */
+        SelectedStorage selected;
+
+        if (!queryDownloadStorage(tracker_host,
+                                tracker_port,
+                                file_id,
+                                &selected)) {
+            return 1;
+        }
+
+        std::cout << "[client] selected storage:" << std::endl;
+        std::cout << "  group_name: " << selected.group_name << std::endl;
+        std::cout << "  ip: " << selected.ip << std::endl;
+        std::cout << "  port: " << selected.port << std::endl;
+
+        if (!deleteFileFromStorage(selected, file_id)) {
+            return 1;
+        }
+
+        return 0;
+    }
+
     /*
      * 如果命令不属于上面任何一种，说明用户输入了未知命令。
      */
@@ -587,6 +627,50 @@ static bool downloadFileFromStorage(const SelectedStorage& storage,
     std::cout << "[client] output: " << output << std::endl;
     std::cout << "[client] size: "
               << response.body.size() << std::endl;
+
+    return true;
+}
+
+/*
+ * 从 storage 删除文件。
+ *
+ * 参数：
+ * storage：tracker 返回的 storage 节点
+ * file_id：要删除的文件 ID
+ *
+ * 返回：
+ * true：删除成功
+ * false：删除失败
+ */
+static bool deleteFileFromStorage(const SelectedStorage& storage,
+                                  const std::string& file_id) {
+    TcpClient client(storage.ip, storage.port);
+
+    std::string body = "file_id=" + file_id;
+
+    Packet request = Protocol::makePacket(
+        Command::DELETE_FILE,
+        Status::OK,
+        body
+    );
+
+    Packet response;
+
+    if (!client.sendPacket(request, &response)) {
+        std::cerr << "[client] delete from storage failed"
+                  << std::endl;
+        return false;
+    }
+
+    if (response.header.status != Status::OK) {
+        std::cerr << "[client] storage returned error: "
+                  << response.body << std::endl;
+        return false;
+    }
+
+    std::cout << "[client] delete success" << std::endl;
+    std::cout << "[client] response: "
+              << response.body << std::endl;
 
     return true;
 }
