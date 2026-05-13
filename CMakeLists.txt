@@ -60,6 +60,11 @@ add_executable(fdfs_cli
     ${NET_SRC}
 )
 
+set(STORAGE_SRC
+    src/storage/Binlog.cpp
+    src/storage/StorageService.cpp
+)
+
 target_link_libraries(tracker_server PRIVATE Threads::Threads)
 target_link_libraries(storage_server PRIVATE Threads::Threads)
 target_link_libraries(fdfs_cli PRIVATE Threads::Threads)

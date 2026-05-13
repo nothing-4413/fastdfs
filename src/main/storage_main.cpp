@@ -206,6 +206,8 @@ static bool sendHeartbeat(const std::string& tracker_host, int tracker_port,
      */
    std::string base_path = config.getString("base_path","/data/storage1");
 
+   std::string binlog_path = base_path + "/binlog.dat";
+
    /*
      * 真正保存文件的路径。
      *
@@ -302,7 +304,9 @@ static bool sendHeartbeat(const std::string& tracker_host, int tracker_port,
 
   heartbeat_thread.detach();
 
-  StorageService storage_service(group_name,store_path0);
+ StorageService storage_service(group_name,
+                                store_path0,
+                                binlog_path);
 
   TcpServer server("0.0.0.0", storage_port);
 

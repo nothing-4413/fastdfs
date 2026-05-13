@@ -12,9 +12,11 @@
 #include <cstdio>
 
 StorageService::StorageService(const std::string& group_name,
-                               const std::string& store_path0)
+                               const std::string& store_path0,
+                               const std::string& binlog_path)
     : group_name_(group_name),
-      store_path0_(store_path0) {
+      store_path0_(store_path0),
+      binlog_(binlog_path) {
 }
 
 Packet StorageService::handlePacket(const Packet& request
@@ -157,6 +159,17 @@ Packet StorageService::handleUploadFile(const Packet& request)
             Command::RESPONSE,
             Status::ERROR,
             "write metadata failed"
+        );
+    }
+
+    /*
+    * 文件和 metadata 都写成功后，记录 CREATE binlog。
+    */
+    if (!binlog_.appendCreate(file_id, filename, content.size())) {
+        return Protocol::makePacket(
+            Command::RESPONSE,
+            Status::ERROR,
+            "write create binlog failed"
         );
     }
 
@@ -304,16 +317,15 @@ Packet StorageService::handleDeleteFile(const Packet& request) {
         );
     }
 
-    std::string meta_path = buildMetaPath(file_id);
-
     /*
-    * metadata 删除失败不一定要让整个 delete 失败。
-    * 因为真实文件已经删除了。
-    * 这里先打印警告。
+    * 真实文件删除成功后，记录 DELETE binlog。
     */
-    if (!deleteRealFile(meta_path)) {
-        std::cerr << "[storage] warning: delete metadata failed: "
-                << meta_path << std::endl;
+    if (!binlog_.appendDelete(file_id)) {
+        return Protocol::makePacket(
+            Command::RESPONSE,
+            Status::ERROR,
+            "write delete binlog failed"
+        );
     }
 
     std::cout << "[storage] delete success"

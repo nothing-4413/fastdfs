@@ -1,11 +1,21 @@
 #include "protocol/Packet.h"
 #include <string>
+#include "storage/Binlog.h"
 
 class StorageServer
 {
 public:
-    StorageServer(const std::string& group_name,
-                        std::string store_path0);
+    /*
+    * 构造函数。
+    *
+    * 参数：
+    * group_name：当前 storage 所属 group
+    * store_path0：真实文件存储目录
+    * binlog_path：binlog 文件路径
+    */
+    StorageService(const std::string& group_name,
+                    const std::string& store_path0,
+                    const std::string& binlog_path);
                         
     Packet handlePacket(const Packet& request, const std::string& peer_ip);
 
@@ -146,4 +156,11 @@ private:
 private:
     std::string group_name_;
     std::string store_path0_;
+    /*
+    * storage 操作日志。
+    *
+    * 上传成功写 CREATE。
+    * 删除成功写 DELETE。
+    */
+    Binlog binlog_;
 }
