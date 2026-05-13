@@ -10,6 +10,23 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <cstdio>
+#include "net/TcpClient.h"
+
+#include <cstdlib>
+#include <vector>
+
+static std::vector<std::string> splitByTab(const std::string& line) {
+    std::vector<std::string> result;
+
+    std::istringstream input(line);
+    std::string item;
+
+    while (std::getline(input, item, '\t')) {
+        result.push_back(item);
+    }
+
+    return result;
+}
 
 StorageService::StorageService(const std::string& group_name,
                                const std::string& store_path0,
@@ -38,6 +55,14 @@ Packet StorageService::handlePacket(const Packet& request
 
     if (request.header.cmd == Command::GET_METADATA) {
         return handleGetMetadata(request);
+    }
+
+    if (request.header.cmd == Command::FETCH_BINLOG) {
+        return handleFetchBinlog(request);
+    }
+
+    if (request.header.cmd == Command::SYNC_PULL) {
+        return handleSyncPull(request);
     }
 
     return Protocol::makePacket(
@@ -439,5 +464,311 @@ Packet StorageService::handleGetMetadata(const Packet& request) {
         Command::RESPONSE,
         Status::OK,
         metadata
+    );
+}
+
+Packet StorageService::handleFetchBinlog(const Packet& request) {
+    (void)request;
+
+    std::string content;
+
+    if (!binlog_.readAll(&content)) {
+        return Protocol::makePacket(
+            Command::RESPONSE,
+            Status::ERROR,
+            "read binlog failed"
+        );
+    }
+
+    std::cout << "[storage] fetch binlog success"
+              << ", size=" << content.size()
+              << std::endl;
+
+    return Protocol::makePacket(
+        Command::RESPONSE,
+        Status::OK,
+        content
+    );
+}
+
+bool StorageService::parseSyncPullBody(const std::string& body,
+                                       std::string* src_ip,
+                                       int* src_port) const {
+    if (src_ip == nullptr || src_port == nullptr) {
+        return false;
+    }
+
+    std::istringstream input(body);
+    std::string line;
+
+    while (std::getline(input, line)) {
+        std::size_t pos = line.find('=');
+        if (pos == std::string::npos) {
+            continue;
+        }
+
+        std::string key = line.substr(0, pos);
+        std::string value = line.substr(pos + 1);
+
+        if (key == "src_ip") {
+            *src_ip = value;
+        } else if (key == "src_port") {
+            try {
+                *src_port = std::stoi(value);
+            } catch (...) {
+                return false;
+            }
+        }
+    }
+
+    return !src_ip->empty() && *src_port > 0;
+}
+
+bool StorageService::fetchRemoteBinlog(const std::string& src_ip,
+                                       int src_port,
+                                       std::string* binlog_content) const {
+    if (binlog_content == nullptr) {
+        return false;
+    }
+
+    TcpClient client(src_ip, src_port);
+
+    Packet request = Protocol::makePacket(
+        Command::FETCH_BINLOG,
+        Status::OK,
+        ""
+    );
+
+    Packet response;
+
+    if (!client.sendPacket(request, &response)) {
+        std::cerr << "[storage] fetch remote binlog failed"
+                  << std::endl;
+        return false;
+    }
+
+    if (response.header.status != Status::OK) {
+        std::cerr << "[storage] source storage returned error: "
+                  << response.body << std::endl;
+        return false;
+    }
+
+    *binlog_content = response.body;
+    return true;
+}
+
+bool StorageService::applyCreateFromSource(const std::string& src_ip,
+                                           int src_port,
+                                           const std::string& file_id,
+                                           const std::string& filename,
+                                           std::size_t size) {
+    (void)size;
+
+    /*
+     * 向源 storage 下载文件。
+     */
+    TcpClient client(src_ip, src_port);
+
+    std::string body = "file_id=" + file_id;
+
+    Packet request = Protocol::makePacket(
+        Command::DOWNLOAD_FILE,
+        Status::OK,
+        body
+    );
+
+    Packet response;
+
+    if (!client.sendPacket(request, &response)) {
+        std::cerr << "[storage] sync download failed, file_id="
+                  << file_id << std::endl;
+        return false;
+    }
+
+    if (response.header.status != Status::OK) {
+        std::cerr << "[storage] sync download error, file_id="
+                  << file_id
+                  << ", error=" << response.body << std::endl;
+        return false;
+    }
+
+    /*
+     * 写入当前 storage 本地。
+     */
+    std::string real_path = buildRealPath(file_id);
+
+    if (!writeFile(real_path, response.body)) {
+        std::cerr << "[storage] sync write file failed, file_id="
+                  << file_id << std::endl;
+        return false;
+    }
+
+    /*
+     * 同步 metadata。
+     *
+     * 当前不从源 storage 拉 meta，而是在目标 storage 重建一份。
+     */
+    std::string meta_path = buildMetaPath(file_id);
+
+    if (!writeMetadata(meta_path,
+                       file_id,
+                       filename,
+                       real_path,
+                       response.body.size())) {
+        std::cerr << "[storage] sync write metadata failed, file_id="
+                  << file_id << std::endl;
+        return false;
+    }
+
+    std::cout << "[storage] sync CREATE success"
+              << ", file_id=" << file_id
+              << ", real_path=" << real_path
+              << std::endl;
+
+    return true;
+}
+
+bool StorageService::applyDeleteFromSource(const std::string& file_id) {
+    std::string real_path = buildRealPath(file_id);
+    std::string meta_path = buildMetaPath(file_id);
+
+    /*
+     * 当前简单处理：
+     * 删除失败时只打印 warning。
+     *
+     * 因为目标 storage 上可能本来就没有这个文件。
+     */
+    if (!deleteRealFile(real_path)) {
+        std::cerr << "[storage] warning: sync delete file failed or not exists: "
+                  << real_path << std::endl;
+    }
+
+    if (!deleteRealFile(meta_path)) {
+        std::cerr << "[storage] warning: sync delete metadata failed or not exists: "
+                  << meta_path << std::endl;
+    }
+
+    std::cout << "[storage] sync DELETE handled"
+              << ", file_id=" << file_id
+              << std::endl;
+
+    return true;
+}
+
+bool StorageService::applyBinlogFromSource(const std::string& src_ip,
+                                           int src_port,
+                                           const std::string& binlog_content) {
+    std::istringstream input(binlog_content);
+    std::string line;
+
+    bool all_ok = true;
+
+    while (std::getline(input, line)) {
+        if (line.empty()) {
+            continue;
+        }
+
+        std::vector<std::string> fields = splitByTab(line);
+
+        if (fields.size() < 3) {
+            std::cerr << "[storage] bad binlog line: "
+                      << line << std::endl;
+            all_ok = false;
+            continue;
+        }
+
+        const std::string& op = fields[1];
+
+        if (op == "CREATE") {
+            if (fields.size() < 5) {
+                std::cerr << "[storage] bad CREATE binlog line: "
+                          << line << std::endl;
+                all_ok = false;
+                continue;
+            }
+
+            std::string file_id = fields[2];
+            std::string filename = fields[3];
+
+            std::size_t size = 0;
+            try {
+                size = static_cast<std::size_t>(
+                    std::stoull(fields[4])
+                );
+            } catch (...) {
+                size = 0;
+            }
+
+            if (!applyCreateFromSource(src_ip,
+                                       src_port,
+                                       file_id,
+                                       filename,
+                                       size)) {
+                all_ok = false;
+            }
+        } else if (op == "DELETE") {
+            std::string file_id = fields[2];
+
+            if (!applyDeleteFromSource(file_id)) {
+                all_ok = false;
+            }
+        } else {
+            std::cerr << "[storage] unknown binlog op: "
+                      << op << std::endl;
+            all_ok = false;
+        }
+    }
+
+    return all_ok;
+}
+
+Packet StorageService::handleSyncPull(const Packet& request) {
+    std::string src_ip;
+    int src_port = 0;
+
+    if (!parseSyncPullBody(request.body, &src_ip, &src_port)) {
+        return Protocol::makePacket(
+            Command::RESPONSE,
+            Status::ERROR,
+            "bad sync pull body"
+        );
+    }
+
+    std::cout << "[storage] sync pull start"
+              << ", src_ip=" << src_ip
+              << ", src_port=" << src_port
+              << std::endl;
+
+    std::string binlog_content;
+
+    if (!fetchRemoteBinlog(src_ip, src_port, &binlog_content)) {
+        return Protocol::makePacket(
+            Command::RESPONSE,
+            Status::ERROR,
+            "fetch remote binlog failed"
+        );
+    }
+
+    bool ok = applyBinlogFromSource(src_ip,
+                                    src_port,
+                                    binlog_content);
+
+    if (!ok) {
+        return Protocol::makePacket(
+            Command::RESPONSE,
+            Status::ERROR,
+            "apply binlog failed"
+        );
+    }
+
+    std::cout << "[storage] sync pull success"
+              << ", src_ip=" << src_ip
+              << ", src_port=" << src_port
+              << std::endl;
+
+    return Protocol::makePacket(
+        Command::RESPONSE,
+        Status::OK,
+        "sync pull success"
     );
 }

@@ -300,6 +300,7 @@ int main(int argc,char* argv[])
 
     if(argc < 2)
     {
+        std::cerr << "  sync <src_ip:src_port> <dst_ip:dst_port>" << std::endl;
         std::cerr << "usage: fdfs_cli <command> [args]" << std::endl;
         std::cerr << "commands:" << std::endl;
         std::cerr << "  version" << std::endl;
@@ -571,6 +572,23 @@ int main(int argc,char* argv[])
         std::cout << "  port: " << selected.port << std::endl;
 
         if (!getMetadataFromStorage(selected, file_id)) {
+            return 1;
+        }
+
+        return 0;
+    }
+
+    if (command == "sync") {
+        if (argc < 4) {
+            std::cerr << "usage: fdfs_cli sync <src_ip:src_port> <dst_ip:dst_port>"
+                    << std::endl;
+            return 1;
+        }
+
+        std::string src_addr = argv[2];
+        std::string dst_addr = argv[3];
+
+        if (!syncStorage(src_addr, dst_addr)) {
             return 1;
         }
 
@@ -910,6 +928,72 @@ static bool reportFileDelete(const std::string& tracker_host,
     }
 
     std::cout << "[client] report file delete success" << std::endl;
+
+    return true;
+}
+
+/*
+ * 手动触发 dst storage 从 src storage 同步。
+ *
+ * 参数：
+ * src_addr：源 storage 地址，例如 127.0.0.1:23000
+ * dst_addr：目标 storage 地址，例如 127.0.0.1:23001
+ *
+ * 返回：
+ * true：同步成功
+ * false：同步失败
+ */
+static bool syncStorage(const std::string& src_addr,
+                        const std::string& dst_addr) {
+    std::string src_ip;
+    int src_port = 0;
+
+    std::string dst_ip;
+    int dst_port = 0;
+
+    if (!parseHostPort(src_addr, &src_ip, &src_port)) {
+        std::cerr << "[client] invalid src storage address: "
+                  << src_addr << std::endl;
+        return false;
+    }
+
+    if (!parseHostPort(dst_addr, &dst_ip, &dst_port)) {
+        std::cerr << "[client] invalid dst storage address: "
+                  << dst_addr << std::endl;
+        return false;
+    }
+
+    /*
+     * client 连接目标 storage。
+     * 目标 storage 再主动去源 storage 拉 binlog 和文件。
+     */
+    TcpClient client(dst_ip, dst_port);
+
+    std::ostringstream body;
+    body << "src_ip=" << src_ip << "\n";
+    body << "src_port=" << src_port << "\n";
+
+    Packet request = Protocol::makePacket(
+        Command::SYNC_PULL,
+        Status::OK,
+        body.str()
+    );
+
+    Packet response;
+
+    if (!client.sendPacket(request, &response)) {
+        std::cerr << "[client] sync request failed" << std::endl;
+        return false;
+    }
+
+    if (response.header.status != Status::OK) {
+        std::cerr << "[client] sync failed: "
+                  << response.body << std::endl;
+        return false;
+    }
+
+    std::cout << "[client] sync success: "
+              << response.body << std::endl;
 
     return true;
 }

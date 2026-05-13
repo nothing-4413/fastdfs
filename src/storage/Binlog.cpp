@@ -55,3 +55,22 @@ bool Binlog::appendLine(const std::string& line) {
     return output.good();
 }
 
+bool Binlog::readAll(std::string* content) const {
+    if (content == nullptr) {
+        return false;
+    }
+
+    std::ifstream input(binlog_path_.c_str(), std::ios::binary);
+
+    if (!input.is_open()) {
+        std::cerr << "[storage] open binlog for read failed: "
+                  << binlog_path_ << std::endl;
+        return false;
+    }
+
+    std::ostringstream buffer;
+    buffer << input.rdbuf();
+
+    *content = buffer.str();
+    return true;
+}

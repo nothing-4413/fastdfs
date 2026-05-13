@@ -83,6 +83,18 @@
     DELETE_FILE = 32;
 
     /*
+    * storage 之间同步相关命令。
+    *
+    * FETCH_BINLOG：
+    *   从某个 storage 获取 binlog 内容。
+    *
+    * SYNC_PULL：
+    *   通知一个 storage 从另一个 storage 拉取 binlog 并同步文件。
+    */
+    FETCH_BINLOG = 50,
+    SYNC_PULL = 51,
+
+    /*
      * 通用响应命令。
      *
      * 服务端收到请求后，通常返回 RESPONSE。

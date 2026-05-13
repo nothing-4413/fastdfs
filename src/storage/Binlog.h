@@ -56,6 +56,22 @@ public:
      */
     bool appendDelete(const std::string& file_id);
 
+    /*
+    * 读取整个 binlog 文件内容。
+    *
+    * 参数：
+    * content：输出参数，保存 binlog 全部内容
+    *
+    * 返回：
+    * true：读取成功
+    * false：读取失败
+    *
+    * 注意：
+    * 当前是学习版，直接读取整个 binlog。
+    * 后面真正工程化时，应该支持按 offset 增量读取。
+    */
+    bool readAll(std::string* content) const;
+
 private:
     /*
      * 追加一行日志。
