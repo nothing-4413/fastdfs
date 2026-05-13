@@ -4,6 +4,7 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
+#include <cstddef>
 
 /*
  * StorageNode
@@ -11,7 +12,7 @@
  * 表示一个 storage server 节点。
  *
  * tracker 会根据这些信息判断：
- * 1. 这个 storage 属于哪个 group
+ * 1. 这个 storage 属于哪个 groupselectUploadStorage
  * 2. 这个 storage 是否在线
  * 3. client 上传文件时能不能选择它
  */
@@ -74,29 +75,25 @@ public:
     int makeTimeoutNodes(int timeout_seconds);
 
     /*
-     * 选择一个可用于上传的 storage。
-     *
-     * 参数：
-     * group_name：
-     *   如果为空，表示不指定 group，从所有 online storage 里选择。
-     *   如果不为空，表示只从指定 group 中选择。
-     *
-     * selected：
-     *   输出参数，保存被选中的 storage。
-     *
-     * 返回：
-     *   true：选中 storage
-     *   false：没有可用 storage
-     *
-     * 当前策略：
-     *   选择第一个 online storage。
-     *
-     * 后面会替换成：
-     *   round robin
-     *   最大剩余空间
-     *   指定 group
-     */
-    bool selectUploadStorge(const std::string& group_name,StorageNode* selected)const;
+    * 使用 Round Robin 选择一个可用于上传的 storage。
+    *
+    * 参数：
+    * group_name：
+    *   如果为空，从所有 online storage 中轮询选择。
+    *   如果不为空，只从指定 group 的 online storage 中轮询选择。
+    *
+    * selected：
+    *   输出参数，保存被选中的 storage。
+    *
+    * 返回：
+    * true：选择成功
+    * false：没有可用 storage
+    *
+    * 注意：
+    * 这个函数会修改 round_robin_index_，所以不能再是 const。
+    */
+    bool selectUploadStorage(const std::string& group_name,
+                            StorageNode* selected);
     
     /*
     * 选择一个可用于下载的 storage。
@@ -156,5 +153,12 @@ private:
 
 private:
     std::unordered_map<std::string, StorageNode> nodes_;
+
+    /*
+    * Round Robin 下标。
+    *
+    * 每次成功选择一个 storage 后，向后移动。
+    */
+    std::size_t round_robin_index_ = 0;
 }
 

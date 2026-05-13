@@ -4,8 +4,16 @@
 #include <iostream>
 #include <sstream>
 
-std::string StorageRegistry::makeKey(const StorageNode& node) {
-    return makeKey(node.group_name, node.ip, node.port);
+std::string StorageRegistry::makeKey(const std::string& group_name,
+                                     const std::string& ip,
+                                     int port) {
+    std::ostringstream oss;
+
+    oss << group_name << "@"
+        << ip << ":"
+        << port;
+
+    return oss.str();
 }
 
 /*
@@ -110,22 +118,25 @@ int StorageRegistry::makeTimeoutNodes(int timeout_seconds)
     }
 }
 
-bool StorageRegistry::selectUploadStorge(const std::string& group_name, StorageNode* selected) const
-{
+bool StorageRegistry::selectUploadStorage(const std::string& group_name,
+                                          StorageNode* selected){
     if(selected == nullptr) {
         return false;
     }
 
-    /*
-     * 当前选择策略非常简单：
+     /*
+     * 先收集所有符合条件的 online storage。
      *
-     * 遍历所有节点，找到第一个 online 的 storage。
-     *
-     * 如果 group_name 不为空，就要求 group_name 也匹配。
-     *
-     * 这个函数是后续负载均衡的扩展点。
+     * 为什么不直接在 unordered_map 上轮询？
+     * 因为 unordered_map 的遍历顺序不稳定。
+     * 先放到 vector 里，逻辑更清晰。
      */
-    for(std::unordered_map<std::string, StorageNode>::const_iterator it = nodes_.begin(); it != nodes_.end(); ++it) {
+    std::vector<StorageNode> candidates;
+
+    for (std::unordered_map<std::string, StorageNode>::const_iterator it =
+             nodes_.begin();
+         it != nodes_.end();
+         ++it) {
         const StorageNode& node = it->second;
 
         if (!node.online) {
@@ -136,10 +147,37 @@ bool StorageRegistry::selectUploadStorge(const std::string& group_name, StorageN
             continue;
         }
 
-        *selected = node;
-        return true;
+        candidates.push_back(node);
     }
-    return false;
+
+    if (candidates.empty()) {
+        return false;
+    }
+
+    /*
+     * 防止 round_robin_index_ 超过当前候选数量。
+     *
+     * 例如原来有 2 个 storage，现在只剩 1 个 online，
+     * 下标需要重新落回合法范围。
+     */
+    std::size_t index = round_robin_index_ % candidates.size();
+
+    *selected = candidates[index];
+
+    /*
+     * 下次选择下一个 storage。
+     */
+    round_robin_index_ = (round_robin_index_ + 1) % candidates.size();
+
+    std::cout << "[tracker] round robin select"
+              << ", index=" << index
+              << ", next_index=" << round_robin_index_
+              << ", group=" << selected->group_name
+              << ", ip=" << selected->ip
+              << ", port=" << selected->port
+              << std::endl;
+
+    return true;
 }
 
 std::vector<StorageNode> StorageRegistry::listALL() const
