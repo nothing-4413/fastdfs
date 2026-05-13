@@ -193,6 +193,9 @@ Packet TrackerService::handlePacket(const Packet&request,const std::string& peer
         case Command::REPORT_FILE_UPLOAD:
             return handleReportFileUpload(request);
 
+        case Command::REPORT_FILE_DELETE:
+            return handleReportFileDelete(request);
+
         default:
             return Protocol::makePacket(
                 Command::RESPONSE,
@@ -577,5 +580,55 @@ Packet TrackerService::handleReportFileUpload(const Packet& request) {
         Command::RESPONSE,
         Status::OK,
         "report file upload success"
+    );
+}
+
+Packet TrackerService::handleReportFileDelete(const Packet& request) {
+    std::unordered_map<std::string, std::string> kv =
+        parseKeyValueBody(request.body);
+
+    if (kv.find("file_id") == kv.end()) {
+        return Protocol::makePacket(
+            Command::RESPONSE,
+            Status::ERROR,
+            "missing file_id"
+        );
+    }
+
+    std::string file_id = kv["file_id"];
+
+    /*
+     * 从内存 FileIndex 删除 file_id。
+     */
+    bool removed = file_index_.remove(file_id);
+
+    if (!removed) {
+        return Protocol::makePacket(
+            Command::RESPONSE,
+            Status::ERROR,
+            "file index not found"
+        );
+    }
+
+    std::cout << "[tracker] file index removed"
+              << ", file_id=" << file_id
+              << ", total_index=" << file_index_.size()
+              << std::endl;
+
+    /*
+     * 删除索引后立即保存到 file_index.dat。
+     */
+    if (!saveFileIndex()) {
+        return Protocol::makePacket(
+            Command::RESPONSE,
+            Status::ERROR,
+            "save file index failed"
+        );
+    }
+
+    return Protocol::makePacket(
+        Command::RESPONSE,
+        Status::OK,
+        "report file delete success"
     );
 }

@@ -529,6 +529,15 @@ int main(int argc,char* argv[])
             return 1;
         }
 
+        /*
+        * storage 删除成功后，再通知 tracker 删除 FileIndex。
+        */
+        if (!reportFileDelete(tracker_host,
+                            tracker_port,
+                            file_id)) {
+            return 1;
+        }
+
         return 0;
     }
 
@@ -857,6 +866,50 @@ static bool reportFileUpload(const std::string& tracker_host,
     }
 
     std::cout << "[client] report file upload success" << std::endl;
+
+    return true;
+}
+
+/*
+ * 向 tracker 汇报文件删除结果。
+ *
+ * 参数：
+ * tracker_host：tracker IP
+ * tracker_port：tracker 端口
+ * file_id：已经从 storage 删除成功的文件 ID
+ *
+ * 返回：
+ * true：汇报成功
+ * false：汇报失败
+ */
+static bool reportFileDelete(const std::string& tracker_host,
+                             int tracker_port,
+                             const std::string& file_id) {
+    TcpClient client(tracker_host, tracker_port);
+
+    std::string body = "file_id=" + file_id;
+
+    Packet request = Protocol::makePacket(
+        Command::REPORT_FILE_DELETE,
+        Status::OK,
+        body
+    );
+
+    Packet response;
+
+    if (!client.sendPacket(request, &response)) {
+        std::cerr << "[client] report file delete failed"
+                  << std::endl;
+        return false;
+    }
+
+    if (response.header.status != Status::OK) {
+        std::cerr << "[client] tracker report delete error: "
+                  << response.body << std::endl;
+        return false;
+    }
+
+    std::cout << "[client] report file delete success" << std::endl;
 
     return true;
 }

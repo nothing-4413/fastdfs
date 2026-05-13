@@ -60,6 +60,14 @@
     REPORT_FILE_UPLOAD = 22,
 
     /*
+    * client 删除文件成功后，向 tracker 汇报删除结果。
+    *
+    * tracker 收到后，从 FileIndex 删除该 file_id，
+    * 并重新保存 file_index.dat。
+    */
+    REPORT_FILE_DELETE = 23,
+
+    /*
      * client 向 storage 上传文件。
      */
     UPLOAD_FILE = 30;

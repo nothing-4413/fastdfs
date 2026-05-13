@@ -99,6 +99,18 @@ private:
     Packet handleReportFileUpload(const Packet& request);
 
     /*
+    * 处理 client 删除文件成功后的索引删除上报。
+    *
+    * request.body 格式：
+    * file_id=group1/M00/00/00/xxx.txt
+    *
+    * 返回：
+    * 成功：Status::OK
+    * 失败：Status::ERROR
+    */
+    Packet handleReportFileDelete(const Packet& request);
+
+    /*
      * 从 STORAGE_JOIN 的 body 中解析 storage 信息。
      *
      * 当前 body 使用简单 key=value 格式：
