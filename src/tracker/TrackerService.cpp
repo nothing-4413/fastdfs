@@ -24,8 +24,8 @@
  * map["group_name"] = "group1"
  * map["port"] = "23000"
  */
-static std::unordered_map<std::string,std::string> 
-parseKetyValueBody(const std::string& body)
+static std::unordered_map<std::string,std::string>
+parseKeyValueBody(const std::string& body)
 {
     std::unordered_map<std::string,std::string> result;
 
@@ -66,7 +66,7 @@ parseKetyValueBody(const std::string& body)
  * ip
  * port
  */
-static std::string buildStorageResponseBody(const StorgeNode& node)
+static std::string buildStorageResponseBody(const StorageNode& node)
 {
     std::ostringstream oss;
 
@@ -240,9 +240,9 @@ Packet TrackerService::handlePing(const Packet& request)
 
 Packet TrackerService::handleStorageJoin(const Packet& request,const std::string& peer_ip)
 {
-    Storge node;
+    StorageNode node;
 
-    if(!parseStorageJoinRequest(request,node,peer_ip,&node))
+    if(!parseStorageJoinBody(request.body, peer_ip, &node))
     {
         return Protocol::makePacket(
             Command::RESPONSE,
@@ -277,7 +277,7 @@ Packet TrackerService::handleStorageHeartbeat(const Packet& request,const std::s
     std::string group_name;
     int port = 0;
     
-    if(!parseStorageHeartbeatBodey(request.body,&group_name,&port))
+    if(!parseStorageHeartbeatBody(request.body,&group_name,&port))
     {
         return Protocol::makePacket(
             Command::RESPONSE,
@@ -332,7 +332,7 @@ Packet TrackerService::handleQueryUploadStorage(const Packet& request)
      *
      * group_name=group1
      */
-    std::unordered_map<std::string,std::string> kv = parseKetyValueBody(request.body);
+    std::unordered_map<std::string,std::string> kv = parseKeyValueBody(request.body);
 
     std::string group_name;
 
@@ -346,8 +346,8 @@ Packet TrackerService::handleQueryUploadStorage(const Packet& request)
      *
      * 目前的选取策略是随机选一个在线的节点，后面可以改成更智能的负载均衡算法。
      */
-    StorgeNode selected;
-    bool ok = registry_.selectUploadStorge(group_name, &selected);
+    StorageNode selected;
+    bool ok = registry_.selectUploadStorage(group_name, &selected);
 
     if(!ok)
     {
@@ -378,14 +378,14 @@ Packet TrackerService::handleQueryUploadStorage(const Packet& request)
     );
 }
 
-bool TrackerService::parseStorageJoinBody(const std::string& body,const std::string& peer_ip,StorgeNode* node)
+bool TrackerService::parseStorageJoinBody(const std::string& body,const std::string& peer_ip,StorageNode* node)
 {
     if(node == nullptr)
     {
         return false;
     }
 
-    std::unordered_map<std::string,std::string> kv = parseKetyValueBody(body);
+    std::unordered_map<std::string,std::string> kv = parseKeyValueBody(body);
 
     if(kv.find("group_name") == kv.end() ||
        kv.find("port") == kv.end())
@@ -426,14 +426,14 @@ bool TrackerService::parseStorageJoinBody(const std::string& body,const std::str
     return true;
 }
 
-bool TrackerService::parseStorageHeartbeatBodey(const std::string& body,std::string* group_name,int* port)
+bool TrackerService::parseStorageHeartbeatBody(const std::string& body,std::string* group_name,int* port)
 {
     if(group_name == nullptr || port == nullptr)
     {
         return false;
     }
 
-    std::unordered_map<std::string,std::string> kv = parseKetyValueBody(body);
+    std::unordered_map<std::string,std::string> kv = parseKeyValueBody(body);
 
     if(kv.find("group_name") == kv.end() ||
        kv.find("port") == kv.end())

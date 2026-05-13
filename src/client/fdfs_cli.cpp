@@ -29,11 +29,32 @@
  * 这一节还没有真正连接 storage 上传文件。
  */
 
-struct SelectStorage{
+struct SelectedStorage{
     std::string group_name;
     std::string ip;
     int port;
-}
+};
+
+static bool queryDownloadStorage(const std::string& tracker_host,
+                                 int tracker_port,
+                                 const std::string& file_id,
+                                 SelectedStorage* selected);
+static bool downloadFileFromStorage(const SelectedStorage& storage,
+                                    const std::string& file_id,
+                                    const std::string& output);
+static bool deleteFileFromStorage(const SelectedStorage& storage,
+                                  const std::string& file_id);
+static bool getMetadataFromStorage(const SelectedStorage& storage,
+                                   const std::string& file_id);
+static bool reportFileUpload(const std::string& tracker_host,
+                             int tracker_port,
+                             const std::string& file_id,
+                             const SelectedStorage& storage);
+static bool reportFileDelete(const std::string& tracker_host,
+                             int tracker_port,
+                             const std::string& file_id);
+static bool syncStorage(const std::string& src_addr,
+                        const std::string& dst_addr);
 
 static bool parseHostPort(const std::string& address,std::string* host,int* port)
 {
@@ -132,18 +153,6 @@ static bool queryUploadStorage(const std::string& tracker_host,
     return false;
     }
 
-    selected->group_name = kv["group_name"];
-    selected->ip = kv["ip"];
-
-    try {
-            selected->port = std::stoi(kv["port"]);
-    } 
-    catch (...) {
-    std::cerr << "[client] invalid storage port: "
-              << kv["port"] << std::endl;
-    return false;
-    }
-
     TcpClient client(tracker_host,tracker_port);
 
     /*
@@ -152,7 +161,7 @@ static bool queryUploadStorage(const std::string& tracker_host,
      * 后面如果要指定 group，可以传：
      * group_name=group1
      */
-    Packet request = Protcool::makePacket(
+    Packet request = Protocol::makePacket(
         Command::QUERY_UPLOAD_STORAGE,
         Status::OK,
         ""
@@ -180,6 +189,17 @@ static bool queryUploadStorage(const std::string& tracker_host,
         kv.find("port") == kv.end()) {
         std::cerr << "[client] bad tracker response body: "
                   << response.body << std::endl;
+        return false;
+    }
+
+    selected->group_name = kv["group_name"];
+    selected->ip = kv["ip"];
+
+    try {
+        selected->port = std::stoi(kv["port"]);
+    } catch (...) {
+        std::cerr << "[client] invalid storage port: "
+                  << kv["port"] << std::endl;
         return false;
     }
 
@@ -213,7 +233,7 @@ static bool readFileContent(const std::string& filename,std::string* content)
 
 static std::string basenameOf(const std::string& path)
 {
-    std::size_t pos = path.find_last_of('/');
+    std::size_t pos = path.find_last_of("/\\");
 
     if (pos == std::string::npos) {
         return path;
@@ -241,7 +261,7 @@ static bool uploadFileToStorage(const SelectedStorage& storage,
         return false;
     }
 
-    std::String content;
+    std::string content;
 
     if(!readFileContent(local_file, &content)) {
         return false;
@@ -369,7 +389,7 @@ int main(int argc,char* argv[])
     {
         TcpClient client(tracker_host,tracker_port);
 
-        Packet request = Protcool::makePacket(
+        Packet request = Protocol::makePacket(
             Command::PING,
             Status::OK,
             "hello tracker"

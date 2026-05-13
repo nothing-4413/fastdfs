@@ -27,7 +27,7 @@
  */
 struct PacketHeader
 {
-    uint64_t bodyt_length;
+    uint64_t body_length;
     Command cmd;
     Status status;
 };

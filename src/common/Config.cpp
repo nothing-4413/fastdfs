@@ -16,7 +16,7 @@
  * 读取到的 key 可能是 "port "，value 可能是 " 22122"。
  * 所以必须先把左右空白去掉。
  */
-std::string Config::trim(const std::String& text)
+std::string Config::trim(const std::string& text)
 {
     std::size_t begin = 0;
     std::size_t end = text.size();
@@ -49,7 +49,7 @@ std::string Config::trim(const std::String& text)
  * # tracker port
  * port = 22122
  */
-bool Congig::load(const std::string& filename)
+bool Config::load(const std::string& filename)
 {
     std::ifstream input(filename.c_str());
     if(!input.is_open())
@@ -59,7 +59,7 @@ bool Congig::load(const std::string& filename)
         return false;
     }
 
-    item_.clear();
+    items_.clear();
 
     std::string line;
     int line_no = 0;
@@ -131,7 +131,7 @@ bool Congig::load(const std::string& filename)
         if(key.empty())
         {
             std::cerr << "[config] empty key at line "
-                      << line_no <<< std::endl;
+                      << line_no << std::endl;
             return false;
         }
 
@@ -141,7 +141,7 @@ bool Congig::load(const std::string& filename)
          * 如果同一个 key 出现多次，后面的值覆盖前面的值。
          * 后面支持多 tracker_server 时，我们会改成支持 vector。
          */
-        item_[key] = value;
+        items_[key] = value;
     }
 
     return true;
@@ -149,13 +149,13 @@ bool Congig::load(const std::string& filename)
 
 bool Config::has(const std::string& key) const
 {
-    return item_.find(key) != item_.end();
+    return items_.find(key) != items_.end();
 }
 
 std::string Config::getString(const std::string& key,
                               const std::string& default_value) const {
-    std::unordered_map<std::string, std::string>::const_iterator it = item_.find(key);
-    if (it = item_.end()) 
+    std::unordered_map<std::string, std::string>::const_iterator it = items_.find(key);
+    if (it == items_.end())
     {
         return default_value;
     }
@@ -164,8 +164,8 @@ std::string Config::getString(const std::string& key,
 }
 
 int Config::getInt(const std::string& key,int default_value) const{
-    std::unordered_map<std::string,std::string>::const_iterator it = item_.find(key);
-    if(it == item_.end())
+    std::unordered_map<std::string,std::string>::const_iterator it = items_.find(key);
+    if(it == items_.end())
     {
         return default_value;
     }
@@ -194,9 +194,9 @@ int Config::getInt(const std::string& key,int default_value) const{
 bool Config::getBool(const std::string& key,bool default_value) const
 {
     std::unordered_map<std::string,std::string>::const_iterator it = 
-    item_.find(key);
+    items_.find(key);
 
-    if(it == item_.end())
+    if(it == items_.end())
     {
         return default_value;
     }

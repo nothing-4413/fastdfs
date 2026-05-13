@@ -50,7 +50,7 @@ namespace{
 
 } //namespace
 
-namespace Protcool
+namespace Protocol
 {
     Packet makePacket(Command cmd,Status status,const std::string& body)
     {
@@ -98,9 +98,9 @@ namespace Protcool
        return data;
     }
 
-    bool decode(const std::string& data,Packet* packet)
+    bool decodeHeader(const std::string& data, PacketHeader* header)
     {
-        if(packet == nullptr)
+        if(header == nullptr)
         {
             return false;
         }
@@ -119,23 +119,42 @@ namespace Protcool
 
        uint64_t body_length = ntohll(net_body_length);
 
+        header->body_length = body_length;
+        header->cmd = static_cast<Command>(static_cast<uint8_t>(data[8]));
+        header->status = static_cast<Status>(static_cast<uint8_t>(data[9]));
+
+        return true;
+    }
+
+    bool decode(const std::string& data,Packet* packet)
+    {
+        if(packet == nullptr)
+        {
+            return false;
+        }
+
+        PacketHeader header;
+        if (!decodeHeader(data, &header))
+        {
+            return false;
+        }
+
        /*
         * 检查实际收到的数据长度是否等于 header + body。
         *
         * 当前阶段我们一次 recv 假设能收到完整包。
         * 后面实现 Buffer 后，会处理半包和粘包。
         */
-        if(data.size() < HEADER_SIZE + body_length)
+        if(header.body_length > data.size() - HEADER_SIZE)
         {
             return false;
         }
 
-        packet->header.body_length = body_length;
-        packet->header.cmd = static_cast<Command>(static_cast<uint8_t>(data[8]));
-        packet->header.status = static_cast<Status>(static_cast<uint8_t>(data[9]));
+        packet->header = header;
 
-        packet->body.assign(data.data() + HEADER_SIZE,static<std::size_t>(body_length));
+        packet->body.assign(data.data() + HEADER_SIZE,
+                            static_cast<std::size_t>(header.body_length));
 
         return true;
     }
-}//namespace Protcool
+} // namespace Protocol

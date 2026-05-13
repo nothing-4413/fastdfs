@@ -1,8 +1,10 @@
+#pragma once
+
 #include "protocol/Packet.h"
 #include <string>
 #include "storage/Binlog.h"
 
-class StorageServer
+class StorageService
 {
 public:
     /*
@@ -20,7 +22,10 @@ public:
     Packet handlePacket(const Packet& request, const std::string& peer_ip);
 
 private:
-    Packet handleUploadFile(const Packet& request, const std::string& peer_ip);
+    Packet handleUploadFile(const Packet& request);
+    bool parseUploadBody(const std::string& body,
+                         std::string* filename,
+                         std::string* content) const;
 
     /*
     * 处理文件下载请求。
@@ -267,4 +272,4 @@ private:
     Binlog binlog_;
 
 
-}
+};

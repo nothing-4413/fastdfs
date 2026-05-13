@@ -44,13 +44,13 @@ namespace SocketUtil
             std::cerr << "[socket] setsockopt failed: "
                       << std::strerror(errno) << std::endl;  
             close(listen_fd);
-            return -1;cccccc
+            return -1;
         }
 
         /*
         * sockaddr_in 是 IPv4 地址结构。
         */
-        socketaddr_in addr;
+        sockaddr_in addr;
         std::memset(&addr, 0, sizeof(addr));
 
         addr.sin_family = AF_INET;
@@ -106,7 +106,7 @@ namespace SocketUtil
         return listen_fd;
     }
 
-    int connectionToServer(const std::string& ip, int port)
+    int connectToServer(const std::string& ip, int port)
     {
         /*
          *客户端也要先创建 socket。

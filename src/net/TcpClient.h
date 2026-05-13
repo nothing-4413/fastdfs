@@ -22,16 +22,16 @@ public:
      *
      * 这个接口暂时保留，方便对比学习。
      */
-    bool sendText(const std::string& text,std::string& response);
+    bool sendText(const std::string& text, std::string* response);
 
     /*
      * 发送协议包，并读取响应协议包。
      *
      * 后续所有 FastDFS 风格操作都会用这个接口。
      */
-    bool sendPacket(const Packet& packet,Packet& response);
+    bool sendPacket(const Packet& packet, Packet* response);
 
-private
+private:
     std::string ip_;
-    int port;
-}
+    int port_;
+};

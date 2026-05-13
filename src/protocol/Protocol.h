@@ -24,7 +24,7 @@
  *
  * 所以 header 总长度是 10 字节。
  */
-namespace Protcool
+namespace Protocol
 {
     /*
     * 当前协议头长度：
@@ -40,12 +40,19 @@ namespace Protcool
     *
     * 这个函数只是为了减少重复代码。
     */
-    Packet makePacket(Command cmd,Status,status,const std::string& body);
+    Packet makePacket(Command cmd, Status status, const std::string& body);
 
     /*
     * 把 Packet 编码成可以通过 socket 发送的字节串。
     */
-   std::string encode(const Packet& packet);
+    std::string encode(const Packet& packet);
+
+    /*
+    * 只解码 10 字节 header。
+    *
+    * TcpClient/TcpServer 用它先拿到 body_length，再继续读取完整 body。
+    */
+    bool decodeHeader(const std::string& data, PacketHeader* header);
 
     /*
     * 把收到的字节串解码成 Packet。
@@ -54,4 +61,4 @@ namespace Protcool
     * 返回 false 表示数据不完整或格式错误。
     */
     bool decode(const std::string& data,Packet* packet);
-} //namespace Protcool
+} // namespace Protocol

@@ -45,9 +45,11 @@ void StorageRegistry::addOrUpdate(const StorageNode& node)
     nodes_[key] = node;
 }
 
-bool StorageRegistry::updateHeartbeat(const std::string& group_name,const std::string& ip.int port)
+bool StorageRegistry::updateHeartbeat(const std::string& group_name,
+                                      const std::string& ip,
+                                      int port)
 {
-    std::string key = makeKey(group_name,iup,port);
+    std::string key = makeKey(group_name, ip, port);
 
     std::unordered_map<std::string, StorageNode>::iterator it = nodes_.find(key);
 
@@ -114,8 +116,9 @@ int StorageRegistry::makeTimeoutNodes(int timeout_seconds)
                       << ", diff=" << diff
                       << std::endl;
         }
-        return offline_count;
     }
+
+    return offline_count;
 }
 
 bool StorageRegistry::selectUploadStorage(const std::string& group_name,
@@ -238,7 +241,7 @@ bool StorageRegistry::selectDownloadStorage(const std::string& group_name,Storag
          it != nodes_.end();
          ++it)
     {
-        const StorageNode* node = it->second;
+        const StorageNode& node = it->second;
 
         if (!node.online) {
             continue;

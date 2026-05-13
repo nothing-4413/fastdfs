@@ -37,6 +37,11 @@ set(TRACKER_SRC
     src/tracker/TrackerService.cpp
 )
 
+set(STORAGE_SRC
+    src/storage/Binlog.cpp
+    src/storage/StorageService.cpp
+)
+
 add_executable(tracker_server
     src/main/tracker_main.cpp
     ${COMMON_SRC}
@@ -58,11 +63,6 @@ add_executable(fdfs_cli
     ${COMMON_SRC}
     ${PROTOCOL_SRC}
     ${NET_SRC}
-)
-
-set(STORAGE_SRC
-    src/storage/Binlog.cpp
-    src/storage/StorageService.cpp
 )
 
 target_link_libraries(tracker_server PRIVATE Threads::Threads)

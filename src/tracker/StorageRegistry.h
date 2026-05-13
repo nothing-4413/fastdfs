@@ -172,5 +172,5 @@ private:
     * 每次成功选择一个 storage 后，向后移动。
     */
     std::size_t round_robin_index_ = 0;
-}
+};
 

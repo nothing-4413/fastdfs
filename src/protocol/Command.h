@@ -23,31 +23,31 @@
      *
      * 当前 Step 4 只实现 PING。
      */
-    PING = 1;
+    PING = 1,
 
      /*
      * storage 启动后向 tracker 注册自己。
      *
      * 后面 Step 5 会实现。
      */
-    STORAGE_JOIN = 10;
+    STORAGE_JOIN = 10,
 
     /*
      * storage 定期向 tracker 发送心跳。
      *
      * 后面 Step 6 会实现。
      */
-    STORAGE_HEARTBEAT = 11;
+    STORAGE_HEARTBEAT = 11,
 
     /*
      * client 上传前向 tracker 查询可用 storage。
      */
-    QUERY_UPLOAD_STORAGE = 20;
+    QUERY_UPLOAD_STORAGE = 20,
 
     /*
      * client 下载前向 tracker 查询文件所在 storage。
      */
-    QUERY_DOWNLOAD_STORAGE = 21;
+    QUERY_DOWNLOAD_STORAGE = 21,
     
     /*
     * client 上传成功后，向 tracker 汇报文件实际落在哪个 storage。
@@ -70,17 +70,22 @@
     /*
      * client 向 storage 上传文件。
      */
-    UPLOAD_FILE = 30;
+    UPLOAD_FILE = 30,
 
     /*
      * client 从 storage 下载文件。
      */
-    DOWNLOAD_FILE = 31;
+    DOWNLOAD_FILE = 31,
 
      /*
      * client 删除 storage 上的文件。
      */
-    DELETE_FILE = 32;
+    DELETE_FILE = 32,
+
+    /*
+     * client 向 storage 查询文件 metadata。
+     */
+    GET_METADATA = 33,
 
     /*
     * storage 之间同步相关命令。
@@ -99,7 +104,7 @@
      *
      * 服务端收到请求后，通常返回 RESPONSE。
      */
-    RESPONSE = 255;
+    RESPONSE = 255
  };
 
  /*
@@ -112,6 +117,6 @@
  */
 enum class Status : uint8_t
 {
-    OK = 0;
-    ERROR = 1;
+    OK = 0,
+    ERROR = 1
 };

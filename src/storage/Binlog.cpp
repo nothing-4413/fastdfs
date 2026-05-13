@@ -4,6 +4,35 @@
 #include <fstream>
 #include <iostream>
 #include <sstream>
+#include <sys/stat.h>
+#include <sys/types.h>
+
+namespace {
+
+void ensureParentDir(const std::string& filename)
+{
+    std::size_t pos = filename.find_last_of('/');
+    if (pos == std::string::npos) {
+        return;
+    }
+
+    std::string dir = filename.substr(0, pos);
+    std::string current;
+
+    for (std::size_t i = 0; i < dir.size(); ++i) {
+        char c = dir[i];
+        current.push_back(c);
+        if (c == '/') {
+            mkdir(current.c_str(), 0755);
+        }
+    }
+
+    if (!current.empty()) {
+        mkdir(current.c_str(), 0755);
+    }
+}
+
+} // namespace
 
 Binlog::Binlog(const std::string& binlog_path)
     : binlog_path_(binlog_path) {
@@ -42,6 +71,8 @@ bool Binlog::appendDelete(const std::string& file_id) {
 }
 
 bool Binlog::appendLine(const std::string& line) {
+    ensureParentDir(binlog_path_);
+
     std::ofstream output(binlog_path_.c_str(), std::ios::app);
 
     if (!output.is_open()) {

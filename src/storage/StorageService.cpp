@@ -12,6 +12,7 @@
 #include <cstdio>
 #include "net/TcpClient.h"
 
+#include <atomic>
 #include <cstdlib>
 #include <vector>
 
@@ -28,6 +29,43 @@ static std::vector<std::string> splitByTab(const std::string& line) {
     return result;
 }
 
+static void ensureDir(const std::string& dir) {
+    std::string current;
+
+    for (std::size_t i = 0; i < dir.size(); ++i) {
+        char c = dir[i];
+        current.push_back(c);
+        if (c == '/') {
+            mkdir(current.c_str(), 0755);
+        }
+    }
+
+    if (!current.empty()) {
+        mkdir(current.c_str(), 0755);
+    }
+}
+
+static bool containsUnsafePathPart(const std::string& value) {
+    return value.empty() ||
+           value.find("..") != std::string::npos ||
+           value.find('\\') != std::string::npos ||
+           value[0] == '/';
+}
+
+static bool isSafeFilename(const std::string& filename) {
+    return !containsUnsafePathPart(filename) &&
+           filename.find('/') == std::string::npos;
+}
+
+static bool isSafeFileId(const std::string& file_id,
+                         const std::string& group_name) {
+    const std::string prefix = group_name + "/M00/00/00/";
+
+    return !containsUnsafePathPart(file_id) &&
+           file_id.find(prefix) == 0 &&
+           file_id.size() > prefix.size();
+}
+
 StorageService::StorageService(const std::string& group_name,
                                const std::string& store_path0,
                                const std::string& binlog_path)
@@ -36,7 +74,7 @@ StorageService::StorageService(const std::string& group_name,
       binlog_(binlog_path) {
 }
 
-Packet StorageService::handlePacket(const Packet& request
+Packet StorageService::handlePacket(const Packet& request,
                                     const std::string& peer_ip)
 {
     (void)peer_ip; // Unused parameter
@@ -72,18 +110,18 @@ Packet StorageService::handlePacket(const Packet& request
     );
 }
 
-bool StorageService:parseUploadBody(const std::string& body,
-                                    std::string& filename,
-                                    std::string& content) const
+bool StorageService::parseUploadBody(const std::string& body,
+                                     std::string* filename,
+                                     std::string* content) const
 {
     if(filename == nullptr || content == nullptr) {
         return false;
     }
 
-    cosnt std::string filename_key = "filename=";
-    cosnt std::string content_key = "\ncontent=";
+    const std::string filename_key = "filename=";
+    const std::string content_key = "\ncontent=";
 
-   id(body.find(filename_key) != 0) {
+   if(body.find(filename_key) != 0) {
         return false;
     }
 
@@ -95,16 +133,20 @@ bool StorageService:parseUploadBody(const std::string& body,
     *filename = body.substr(filename_key.size(), content_pos - filename_key.size());
     *content = body.substr(content_pos + content_key.size());
 
-    return !filename->empty();
+    return isSafeFilename(*filename);
 }
 
-std::string StorageService::getStorePath(const std::string& filename) const
+std::string StorageService::generateFileId(const std::string& filename) const
 {
+    static std::atomic<unsigned long long> sequence(0);
+
     std::ostringstream oss;
 
-    oss << group_name;
+    oss << group_name_
         << "/M00/00/00/"
         << std::time(nullptr)
+        << "_"
+        << sequence.fetch_add(1)
         << "_"
         << filename;
 
@@ -130,9 +172,7 @@ bool StorageService::writeFile(const std::string& real_path,const std::string& c
      * 当前阶段固定创建 M00/00/00 目录。
      * 后面文件分布策略会改成动态目录。
      */
-    mkdir((store_path0_ + "/M00").c_str(), 0755);
-    mkdir((store_path0_ + "/M00/00").c_str(), 0755);
-    mkdir((store_path0_ + "/M00/00/00").c_str(), 0755);
+    ensureDir(store_path0_ + "/M00/00/00");
 
     std::ofstream output(real_path.c_str(),std::ios::binary);
     if(!output.is_open())
@@ -154,7 +194,7 @@ Packet StorageService::handleUploadFile(const Packet& request)
 
     if(!parseUploadBody(request.body,&filename,&content))
     {
-        return Protcool::makePacket(
+        return Protocol::makePacket(
                Command::RESPONSE,
                Status::ERROR,
                "bad upload body"
@@ -230,7 +270,7 @@ bool StorageService::parseDownloadBody(const std::string& body,
 
     *file_id = body.substr(key.size());
 
-    return !file_id->empty();
+    return isSafeFileId(*file_id, group_name_);
 }
 
 bool StorageService::readFile(const std::string& real_path,
@@ -340,6 +380,12 @@ Packet StorageService::handleDeleteFile(const Packet& request) {
             Status::ERROR,
             "delete file failed"
         );
+    }
+
+    std::string meta_path = buildMetaPath(file_id);
+    if (std::remove(meta_path.c_str()) != 0) {
+        std::cerr << "[storage] warning: remove metadata failed or not exists: "
+                  << meta_path << std::endl;
     }
 
     /*

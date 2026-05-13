@@ -9,8 +9,81 @@
 #include <cstring>
 #include <iostream>
 #include <netinet/in.h>
+#include <stdint.h>
 #include <sys/socket.h>
 #include <unistd.h>
+
+namespace {
+
+const uint64_t kMaxPacketBodySize = 64ULL * 1024ULL * 1024ULL;
+
+bool sendAll(int fd, const char* data, std::size_t size)
+{
+    std::size_t sent_total = 0;
+    while (sent_total < size) {
+        ssize_t sent = ::send(fd, data + sent_total, size - sent_total, 0);
+        if (sent < 0 && errno == EINTR) {
+            continue;
+        }
+        if (sent <= 0) {
+            return false;
+        }
+        sent_total += static_cast<std::size_t>(sent);
+    }
+    return true;
+}
+
+bool recvAll(int fd, char* data, std::size_t size)
+{
+    std::size_t received_total = 0;
+    while (received_total < size) {
+        ssize_t n = ::recv(fd, data + received_total, size - received_total, 0);
+        if (n < 0 && errno == EINTR) {
+            continue;
+        }
+        if (n <= 0) {
+            return false;
+        }
+        received_total += static_cast<std::size_t>(n);
+    }
+    return true;
+}
+
+bool recvPacket(int fd, Packet* packet)
+{
+    if (packet == nullptr) {
+        return false;
+    }
+
+    std::string data(Protocol::HEADER_SIZE, '\0');
+    if (!recvAll(fd, &data[0], data.size())) {
+        return false;
+    }
+
+    PacketHeader header;
+    if (!Protocol::decodeHeader(data, &header)) {
+        return false;
+    }
+
+    if (header.body_length > kMaxPacketBodySize) {
+        std::cerr << "[tcp_server] packet body too large: "
+                  << header.body_length << std::endl;
+        return false;
+    }
+
+    data.resize(Protocol::HEADER_SIZE + static_cast<std::size_t>(header.body_length));
+    if (header.body_length > 0) {
+        if (!recvAll(fd,
+                     &data[Protocol::HEADER_SIZE],
+                     static_cast<std::size_t>(header.body_length))) {
+            return false;
+        }
+    }
+
+    return Protocol::decode(data, packet);
+}
+
+} // namespace
 
 TcpServer::TcpServer(const std::string& ip, int port)
     : ip_(ip), port_(port) {}
@@ -52,7 +125,7 @@ bool TcpServer::start()
      */
     while(true)
     {
-        socket_in client_addr;
+        sockaddr_in client_addr;
         socklen_t client_len = sizeof(client_addr);
         std::memset(&client_addr, 0, sizeof(client_addr));
 
@@ -112,47 +185,18 @@ bool TcpServer::start()
 
 void TcpServer::handleClient(int client_fd, const std::string& peer_ip)
 {
-    char buffer[1024];
-
-    std::memset(buffer, 0, sizeof(buffer));
-
-    /*
-     * recv()
-     *
-     * 从客户端读取数据。
-     *
-     * 返回值：
-     * > 0：读到的字节数
-     * = 0：客户端关闭连接
-     * < 0：读取失败
-     */
-    ssize_t n = ::recv(client_fd, buffer, sizeof(buffer) - 1, 0);
-    if(n < 0)
-    {
-        std::cerr << "[tcp_server] recv failed: "
-                  << std::strerror(errno) << std::endl;
-        return;
-    }
-
-    if (n == 0) {
-        std::cout << "[tcp_server] client closed connection"<< std::endl;
-        return;
-    }
-
-    std:: string data(buffer,static_cast<std::size_t>(n));
-
     Packet request;
-    if (!Protocol::parsePacket(data, request)) {
+    if (!recvPacket(client_fd, &request)) {
         std::cerr << "[tcp_server] decode request failed" << std::endl;
         
-        Packet response = Protcool::makePacket(
+        Packet response = Protocol::makePacket(
             Command::RESPONSE,
             Status::ERROR,
             "bad packet"
         );
 
-        std::string encoded = Protcool::encode(response);
-        ::send(client_fd, encoded.data(), encoded.size(), 0);
+        std::string encoded = Protocol::encode(response);
+        sendAll(client_fd, encoded.data(), encoded.size());
         return;
     }
 
@@ -187,13 +231,13 @@ void TcpServer::handleClient(int client_fd, const std::string& peer_ip)
          * 这样 TcpServer 本身仍然可单独测试。
          */
         if(request.header.cmd == Command::PING) {
-            response = Protcool::makePacket(
+            response = Protocol::makePacket(
                 Command::RESPONSE,
                 Status::OK,
                 "PONG"
             );
         } else {
-            response = Protcool::makePacket(
+            response = Protocol::makePacket(
                 Command::RESPONSE,
                 Status::ERROR,
                 "no packet handler"
@@ -201,10 +245,9 @@ void TcpServer::handleClient(int client_fd, const std::string& peer_ip)
         }
     }
 
-    std::string encoded = Protcool::encode(response);
+    std::string encoded = Protocol::encode(response);
     
-    ssize_t sent = ::send(client_fd, encoded.data(), encoded.size(), 0);
-    if (sent < 0) {
+    if (!sendAll(client_fd, encoded.data(), encoded.size())) {
         std::cerr << "[tcp_server] send failed: "
                   << std::strerror(errno) << std::endl;
     }

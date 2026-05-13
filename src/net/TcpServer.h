@@ -48,7 +48,7 @@ public:
      *
      * tracker_server 会把 TrackerService::handlePacket 绑定进来。
      */
-    void setPacketHandler(PacketHandler handler) {
+    void setPacketHandler(PacketHandler handler);
 
     /*
      * 启动服务端。

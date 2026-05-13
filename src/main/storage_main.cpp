@@ -25,7 +25,7 @@
  * 4. 每隔 heart_beat_interval 秒发送 STORAGE_HEARTBEAT
  */
 
-static bool parseHoppstPort(const std::string& address, std::string* host, int* port)
+static bool parseHostPort(const std::string& address, std::string* host, int* port)
 {
     std::size_t pos = address.find(':');
     if(pos == std::string::npos)
@@ -37,7 +37,7 @@ static bool parseHoppstPort(const std::string& address, std::string* host, int* 
 
     try
     {
-      *port = std::stoi(adress.substr(pos + 1));
+      *port = std::stoi(address.substr(pos + 1));
     }
     catch(...)
     {
@@ -308,7 +308,7 @@ static bool sendHeartbeat(const std::string& tracker_host, int tracker_port,
                                 store_path0,
                                 binlog_path);
 
-  TcpServer server("0.0.0.0", storage_port);
+  TcpServer server("0.0.0.0", port);
 
   server.setPacketHandler(
     std::bind(&StorageService::handlePacket,
@@ -317,13 +317,15 @@ static bool sendHeartbeat(const std::string& tracker_host, int tracker_port,
               std::placeholders::_2)
   );
 
-  std::const  << "[storage] start storage tcp server on port "
-              << storage_port << std::endl;
+  std::cout << "[storage] start storage tcp server on port "
+            << port << std::endl;
 
   if(!server.start())
   {
       std::cerr << "[storage] start tcp server failed" << std::endl;
       return 1;
   }
+
+  return 0;
     
 }

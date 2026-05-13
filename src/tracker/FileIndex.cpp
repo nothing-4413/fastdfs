@@ -2,6 +2,35 @@
 #include <fstream>
 #include <iostream>
 #include <sstream>
+#include <sys/stat.h>
+#include <sys/types.h>
+
+namespace {
+
+void ensureParentDir(const std::string& filename)
+{
+    std::size_t pos = filename.find_last_of('/');
+    if (pos == std::string::npos) {
+        return;
+    }
+
+    std::string dir = filename.substr(0, pos);
+    std::string current;
+
+    for (std::size_t i = 0; i < dir.size(); ++i) {
+        char c = dir[i];
+        current.push_back(c);
+        if (c == '/') {
+            mkdir(current.c_str(), 0755);
+        }
+    }
+
+    if (!current.empty()) {
+        mkdir(current.c_str(), 0755);
+    }
+}
+
+} // namespace
 
 /*
  * 按 tab 分割一行。
@@ -129,6 +158,8 @@ bool FileIndex::loadFromFile(const std::string& filename) {
 }
 
 bool FileIndex::saveToFile(const std::string& filename) const {
+    ensureParentDir(filename);
+
     std::ofstream output(filename.c_str(), std::ios::trunc);
 
     if (!output.is_open()) {
