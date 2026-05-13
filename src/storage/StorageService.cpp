@@ -34,6 +34,10 @@ Packet StorageService::handlePacket(const Packet& request
         return handleDeleteFile(request);
     }   
 
+    if (request.header.cmd == Command::GET_METADATA) {
+        return handleGetMetadata(request);
+    }
+
     return Protocol::makePacket(
         Command::RESPONSE,
         Status::ERROR,
@@ -116,7 +120,7 @@ bool StorageService::writeFile(const std::string& real_path,const std::string& c
     return output.good();
 }
 
-Packet StorageService::handleUploadFil(const Packet& request)
+Packet StorageService::handleUploadFile(const Packet& request)
 {
     std::string filename;
     std::string content;
@@ -142,12 +146,27 @@ Packet StorageService::handleUploadFil(const Packet& request)
         );
     }
 
-    std::cont << "[storage] upload success"
-              << ", filename=" << filename
-              << ", file_id=" << file_id
-              << ", real_path=" << real_path
-              << ", size=" << content.size()
-              << std::endl;
+    std::string meta_path = buildMetaPath(file_id);
+
+    if (!writeMetadata(meta_path,
+                    file_id,
+                    filename,
+                    real_path,
+                    content.size())) {
+        return Protocol::makePacket(
+            Command::RESPONSE,
+            Status::ERROR,
+            "write metadata failed"
+        );
+    }
+
+    std::cout << "[storage] upload success"
+          << ", filename=" << filename
+          << ", file_id=" << file_id
+          << ", real_path=" << real_path
+          << ", meta_path=" << meta_path
+          << ", size=" << content.size()
+          << std::endl;
 
     std::string response_body = "file_id=" + file_id + "\n";
 
@@ -285,6 +304,18 @@ Packet StorageService::handleDeleteFile(const Packet& request) {
         );
     }
 
+    std::string meta_path = buildMetaPath(file_id);
+
+    /*
+    * metadata 删除失败不一定要让整个 delete 失败。
+    * 因为真实文件已经删除了。
+    * 这里先打印警告。
+    */
+    if (!deleteRealFile(meta_path)) {
+        std::cerr << "[storage] warning: delete metadata failed: "
+                << meta_path << std::endl;
+    }
+
     std::cout << "[storage] delete success"
               << ", file_id=" << file_id
               << ", real_path=" << real_path
@@ -294,5 +325,107 @@ Packet StorageService::handleDeleteFile(const Packet& request) {
         Command::RESPONSE,
         Status::OK,
         "delete success"
+    );
+}
+
+std::string StorageService::buildMetaPath(const std::string& file_id) const {
+    /*
+     * 当前设计：
+     * metadata 文件和真实文件放在同一目录下，后缀加 .meta。
+     *
+     * real file:
+     * ./data/storage1/files/M00/00/00/xxx.txt
+     *
+     * meta file:
+     * ./data/storage1/files/M00/00/00/xxx.txt.meta
+     */
+    return buildRealPath(file_id) + ".meta";
+}
+
+bool StorageService::writeMetadata(const std::string& meta_path,
+                                   const std::string& file_id,
+                                   const std::string& filename,
+                                   const std::string& real_path,
+                                   std::size_t size) const {
+    std::ofstream output(meta_path.c_str(), std::ios::binary);
+
+    if (!output.is_open()) {
+        std::cerr << "[storage] open metadata file failed: "
+                  << meta_path << std::endl;
+        return false;
+    }
+
+    /*
+     * metadata 当前使用 key=value 格式，方便学习和调试。
+     */
+    output << "file_id=" << file_id << "\n";
+    output << "filename=" << filename << "\n";
+    output << "size=" << size << "\n";
+    output << "create_time=" << std::time(nullptr) << "\n";
+    output << "real_path=" << real_path << "\n";
+
+    return output.good();
+}
+
+bool StorageService::readMetadata(const std::string& meta_path,
+                                  std::string* metadata) const {
+    if (metadata == nullptr) {
+        return false;
+    }
+
+    std::ifstream input(meta_path.c_str(), std::ios::binary);
+
+    if (!input.is_open()) {
+        std::cerr << "[storage] open metadata file failed: "
+                  << meta_path << std::endl;
+        return false;
+    }
+
+    std::ostringstream buffer;
+    buffer << input.rdbuf();
+
+    *metadata = buffer.str();
+
+    return true;
+}
+
+Packet StorageService::handleGetMetadata(const Packet& request) {
+    std::string file_id;
+
+    /*
+     * GET_METADATA 的 body 和 DOWNLOAD_FILE 一样：
+     * file_id=...
+     *
+     * 所以复用 parseDownloadBody。
+     */
+    if (!parseDownloadBody(request.body, &file_id)) {
+        return Protocol::makePacket(
+            Command::RESPONSE,
+            Status::ERROR,
+            "bad metadata body"
+        );
+    }
+
+    std::string meta_path = buildMetaPath(file_id);
+
+    std::string metadata;
+
+    if (!readMetadata(meta_path, &metadata)) {
+        return Protocol::makePacket(
+            Command::RESPONSE,
+            Status::ERROR,
+            "read metadata failed"
+        );
+    }
+
+    std::cout << "[storage] get metadata success"
+              << ", file_id=" << file_id
+              << ", meta_path=" << meta_path
+              << std::endl;
+
+    return Protocol::makePacket(
+        Command::RESPONSE,
+        Status::OK,
+        metadata
     );
 }
