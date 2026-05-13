@@ -137,6 +137,34 @@ static std::string parseGroupFromFileId(const std::string& file_id) {
     return file_id.substr(0, pos);
 }
 
+TrackerService::TrackerService(const std::string& file_index_path)
+    : file_index_path_(file_index_path) {
+    /*
+     * tracker 启动时加载本地 file index。
+     */
+    if (!file_index_.loadFromFile(file_index_path_)) {
+        std::cerr << "[tracker] load file index failed: "
+                  << file_index_path_ << std::endl;
+    }
+
+    file_index_.dump();
+}
+
+bool TrackerService::saveFileIndex() {
+    bool ok = file_index_.saveToFile(file_index_path_);
+
+    if (!ok) {
+        std::cerr << "[tracker] save file index failed: "
+                  << file_index_path_ << std::endl;
+        return false;
+    }
+
+    std::cout << "[tracker] file index saved: "
+              << file_index_path_ << std::endl;
+
+    return true;
+}
+
 Packet TrackerService::handlePacket(const Packet&request,const std::string& peer_ip)
 {
      /*
@@ -527,12 +555,23 @@ Packet TrackerService::handleReportFileUpload(const Packet& request) {
     file_index_.put(file_id, node);
 
     std::cout << "[tracker] file index added"
-              << ", file_id=" << file_id
-              << ", group=" << node.group_name
-              << ", ip=" << node.ip
-              << ", port=" << node.port
-              << ", total_index=" << file_index_.size()
-              << std::endl;
+            << ", file_id=" << file_id
+            << ", group=" << node.group_name
+            << ", ip=" << node.ip
+            << ", port=" << node.port
+            << ", total_index=" << file_index_.size()
+            << std::endl;
+
+    /*
+    * 上传成功上报后，立即持久化 file index。
+    */
+    if (!saveFileIndex()) {
+        return Protocol::makePacket(
+            Command::RESPONSE,
+            Status::ERROR,
+            "save file index failed"
+        );
+    }
 
     return Protocol::makePacket(
         Command::RESPONSE,

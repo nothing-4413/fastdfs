@@ -83,6 +83,8 @@ int main(int argc, char* argv[])
      */
     std::string base_path = config.getString("base_path", "/data/tracker");
     
+    std::string file_index_path = base_path + "/file_index.dat";
+
     /*
      * store_lookup 是上传时选择 storage 的策略。
      * 当前只是读取出来，真正负载均衡后面再实现。
@@ -113,6 +115,8 @@ int main(int argc, char* argv[])
     std::cout << "[tracker] check_active_interval: "
               << check_active_interval << std::endl;
     std::cout << "[tracker] storage_timeout: " << storage_timeout << std::endl;
+    std::cout << "[tracker] file_index_path: "
+              << file_index_path << std::endl;
 
     /*
      * 创建 tracker 业务服务对象。
@@ -121,7 +125,7 @@ int main(int argc, char* argv[])
      * service 必须在 server.start() 之前创建。
      * 因为 TcpServer 回调里会使用它。
      */
-    TrackerService service;
+    TrackerService service(file_index_path);
 
     /*
      * 启动后台线程做存活检查。

@@ -19,6 +19,15 @@
  */
 class TrackerService {
 public:
+
+    /*
+    * 构造函数。
+    *
+    * 参数：
+    * file_index_path：文件索引持久化路径
+    */
+    explicit TrackerService(const std::string& file_index_path);
+
     /*
      * 处理一个请求包。
      *
@@ -126,4 +135,21 @@ private:
     * file_id -> storage
     */
     FileIndex file_index_;
+
+    /*
+    * 文件索引持久化路径。
+    *
+    * 例如：
+    * ./data/tracker/file_index.dat
+    */
+    std::string file_index_path_;
+
+    /*
+    * 保存文件索引。
+    *
+    * 返回：
+    * true：保存成功
+    * false：保存失败
+    */
+    bool saveFileIndex();
 };

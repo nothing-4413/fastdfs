@@ -63,6 +63,35 @@ public:
     bool remove(const std::string& file_id);
 
     /*
+    * 从文件加载索引。
+    *
+    * 参数：
+    * filename：索引文件路径，例如 ./data/tracker/file_index.dat
+    *
+    * 返回：
+    * true：加载成功，或者文件不存在但允许继续
+    * false：文件存在但读取/解析失败
+    */
+    bool loadFromFile(const std::string& filename);
+
+    /*
+    * 把当前内存索引保存到文件。
+    *
+    * 参数：
+    * filename：索引文件路径
+    *
+    * 返回：
+    * true：保存成功
+    * false：保存失败
+    */
+    bool saveToFile(const std::string& filename) const;
+
+    /*
+    * 打印当前文件索引，用于调试。
+    */
+    void dump() const;
+
+    /*
      * 当前索引数量。
      */
     std::size_t size() const;
