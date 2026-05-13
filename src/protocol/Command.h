@@ -48,6 +48,16 @@
      * client 下载前向 tracker 查询文件所在 storage。
      */
     QUERY_DOWNLOAD_STORAGE = 21;
+    
+    /*
+    * client 上传成功后，向 tracker 汇报文件实际落在哪个 storage。
+    *
+    * 这一步用于建立：
+    * file_id -> storage
+    *
+    * 后续下载 / 删除 / stat 时，tracker 就能返回正确 storage。
+    */
+    REPORT_FILE_UPLOAD = 22,
 
     /*
      * client 向 storage 上传文件。

@@ -2,6 +2,7 @@
 
 #include "protocol/Packet.h"
 #include "tracker/StorageRegistry.h"
+#include "tracker/FileIndex.h"
 
 #include <string>
 
@@ -74,6 +75,21 @@ private:
     Packet handleQueryDownloadStorage(const Packet& request);
 
     /*
+    * 处理 client 上传成功后的文件索引上报。
+    *
+    * request.body 格式：
+    * file_id=group1/M00/00/00/xxx.txt
+    * group_name=group1
+    * ip=127.0.0.1
+    * port=23000
+    *
+    * 返回：
+    * 成功：Status::OK
+    * 失败：Status::ERROR
+    */
+    Packet handleReportFileUpload(const Packet& request);
+
+    /*
      * 从 STORAGE_JOIN 的 body 中解析 storage 信息。
      *
      * 当前 body 使用简单 key=value 格式：
@@ -104,4 +120,10 @@ private:
      * tracker 内部的 storage 注册表。
      */
     StorageRegistry registry_;
+
+    /*
+    * 文件位置索引：
+    * file_id -> storage
+    */
+    FileIndex file_index_;
 };

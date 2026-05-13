@@ -254,3 +254,16 @@ bool StorageRegistry::selectDownloadStorage(const std::string& group_name,Storag
 
     return false;
 }
+
+bool StorageRegistry::isOnline(const StorageNode& node) const {
+    std::string key = makeKey(node.group_name, node.ip, node.port);
+
+    std::unordered_map<std::string, StorageNode>::const_iterator it =
+        nodes_.find(key);
+
+    if (it == nodes_.end()) {
+        return false;
+    }
+
+    return it->second.online;
+}

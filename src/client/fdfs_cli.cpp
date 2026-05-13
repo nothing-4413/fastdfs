@@ -98,6 +98,29 @@ static std::unordered_map<std::string,std::string> parseKeyValueBody(const std::
 }
 
 /*
+ * 从 storage 上传响应中解析 file_id。
+ *
+ * response.body 格式：
+ * file_id=group1/M00/00/00/xxx.txt
+ */
+static bool parseFileIdFromBody(const std::string& body,
+                                std::string* file_id) {
+    if (file_id == nullptr) {
+        return false;
+    }
+
+    std::unordered_map<std::string, std::string> kv =
+        parseKeyValueBody(body);
+
+    if (kv.find("file_id") == kv.end()) {
+        return false;
+    }
+
+    *file_id = kv["file_id"];
+    return !file_id->empty();
+}
+
+/*
  * queryUploadStorage
  *
  * 向 tracker 查询一个可用于上传的 storage。
@@ -199,8 +222,25 @@ static std::string basenameOf(const std::string& path)
     return path.substr(pos + 1);
 }
 
-static bool uploadFIleToStorage(const SelectedStorage& storage,const std::string& local_file)
-{
+/*
+ * 上传文件到 storage。
+ *
+ * 参数：
+ * storage：tracker 选中的 storage
+ * local_file：本地文件路径
+ * file_id：输出参数，保存 storage 返回的 file_id
+ *
+ * 返回：
+ * true：上传成功
+ * false：上传失败
+ */
+static bool uploadFileToStorage(const SelectedStorage& storage,
+                                const std::string& local_file,
+                                std::string* file_id){
+    if (file_id == nullptr) {
+        return false;
+    }
+
     std::String content;
 
     if(!readFileContent(local_file, &content)) {
@@ -232,6 +272,12 @@ static bool uploadFIleToStorage(const SelectedStorage& storage,const std::string
     if (response.header.status != Status::OK) {
         std::cerr << "[client] storage returned error: "
                   << response.body << std::endl;
+        return false;
+    }
+
+    if (!parseFileIdFromBody(response.body, file_id)) {
+        std::cerr << "[client] parse file_id failed: "
+                << response.body << std::endl;
         return false;
     }
 
@@ -387,8 +433,17 @@ int main(int argc,char* argv[])
         std::cout << "  ip: " << selected.ip << std::endl;
         std::cout << "  port: " << selected.port << std::endl;
                 
-        if(!uploadFileToStorage(selected, filename)) {
-        return 1;
+        std::string file_id;
+
+        if (!uploadFileToStorage(selected, filename, &file_id)) {
+            return 1;
+        }
+
+        if (!reportFileUpload(tracker_host,
+                            tracker_port,
+                            file_id,
+                            selected)) {
+            return 1;
         }
 
         return 0;
@@ -751,6 +806,57 @@ static bool getMetadataFromStorage(const SelectedStorage& storage,
 
     std::cout << "[client] file metadata:" << std::endl;
     std::cout << response.body;
+
+    return true;
+}
+
+/*
+ * 向 tracker 汇报文件上传结果。
+ *
+ * 参数：
+ * tracker_host：tracker IP
+ * tracker_port：tracker 端口
+ * file_id：storage 返回的 file_id
+ * storage：本次实际上传到的 storage
+ *
+ * 返回：
+ * true：汇报成功
+ * false：汇报失败
+ */
+static bool reportFileUpload(const std::string& tracker_host,
+                             int tracker_port,
+                             const std::string& file_id,
+                             const SelectedStorage& storage) {
+    TcpClient client(tracker_host, tracker_port);
+
+    std::ostringstream body;
+
+    body << "file_id=" << file_id << "\n";
+    body << "group_name=" << storage.group_name << "\n";
+    body << "ip=" << storage.ip << "\n";
+    body << "port=" << storage.port << "\n";
+
+    Packet request = Protocol::makePacket(
+        Command::REPORT_FILE_UPLOAD,
+        Status::OK,
+        body.str()
+    );
+
+    Packet response;
+
+    if (!client.sendPacket(request, &response)) {
+        std::cerr << "[client] report file upload failed"
+                  << std::endl;
+        return false;
+    }
+
+    if (response.header.status != Status::OK) {
+        std::cerr << "[client] tracker report error: "
+                  << response.body << std::endl;
+        return false;
+    }
+
+    std::cout << "[client] report file upload success" << std::endl;
 
     return true;
 }

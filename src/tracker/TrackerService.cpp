@@ -78,6 +78,47 @@ static std::string buildStorageResponseBody(const StorgeNode& node)
 }
 
 /*
+ * 从 body 中解析 storage 节点信息。
+ *
+ * body 格式：
+ * group_name=group1
+ * ip=127.0.0.1
+ * port=23000
+ */
+static bool parseStorageNodeFromBody(
+    const std::unordered_map<std::string, std::string>& kv,
+    StorageNode* node) {
+    if (node == nullptr) {
+        return false;
+    }
+
+    if (kv.find("group_name") == kv.end() ||
+        kv.find("ip") == kv.end() ||
+        kv.find("port") == kv.end()) {
+        return false;
+    }
+
+    node->group_name = kv.at("group_name");
+    node->ip = kv.at("ip");
+
+    try {
+        node->port = std::stoi(kv.at("port"));
+    } catch (...) {
+        return false;
+    }
+
+    /*
+     * 这些字段对 file index 来说不是关键。
+     */
+    node->base_path = "";
+    node->store_path0 = "";
+    node->last_heartbeat = 0;
+    node->online = true;
+
+    return true;
+}
+
+/*
  * 从 file_id 中解析 group_name。
  *
  * file_id:
@@ -120,6 +161,9 @@ Packet TrackerService::handlePacket(const Packet&request,const std::string& peer
 
         case Command::QUERY_DOWNLOAD_STORAGE:
             return handleQueryDownloadStorage(request);
+
+        case Command::REPORT_FILE_UPLOAD:
+            return handleReportFileUpload(request);
 
         default:
             return Protocol::makePacket(
@@ -410,33 +454,89 @@ Packet TrackerService::handleQueryDownloadStorage(const Packet& request)
 
     StorageNode selected;
 
-    bool ok = registry_.selectDownloadStorage(group_name, &selected);
+    bool ok = file_index_.get(file_id, &selected);
 
     if (!ok) {
-        std::cout << "[tracker] query download storage failed"
-                  << ", file_id=" << file_id
-                  << ", group=" << group_name
-                  << std::endl;
-
         return Protocol::makePacket(
             Command::RESPONSE,
             Status::ERROR,
-            "no available storage for download"
+            "file index not found"
+        );
+    }
+
+    if (!registry_.isOnline(selected)) {
+        return Protocol::makePacket(
+            Command::RESPONSE,
+            Status::ERROR,
+            "file storage is offline"
         );
     }
 
     std::string body = buildStorageResponseBody(selected);
 
     std::cout << "[tracker] query download storage success"
-              << ", file_id=" << file_id
-              << ", group=" << selected.group_name
-              << ", ip=" << selected.ip
-              << ", port=" << selected.port
-              << std::endl;
+            << ", file_id=" << file_id
+            << ", group=" << selected.group_name
+            << ", ip=" << selected.ip
+            << ", port=" << selected.port
+            << std::endl;
 
     return Protocol::makePacket(
         Command::RESPONSE,
         Status::OK,
         body
+    );
+}
+
+Packet TrackerService::handleReportFileUpload(const Packet& request) {
+    std::unordered_map<std::string, std::string> kv =
+        parseKeyValueBody(request.body);
+
+    if (kv.find("file_id") == kv.end()) {
+        return Protocol::makePacket(
+            Command::RESPONSE,
+            Status::ERROR,
+            "missing file_id"
+        );
+    }
+
+    std::string file_id = kv["file_id"];
+
+    StorageNode node;
+
+    if (!parseStorageNodeFromBody(kv, &node)) {
+        return Protocol::makePacket(
+            Command::RESPONSE,
+            Status::ERROR,
+            "bad storage info"
+        );
+    }
+
+    /*
+     * 确认这个 storage 是 tracker 当前已知且在线的节点。
+     * 避免 client 上报一个不存在的 storage。
+     */
+    if (!registry_.isOnline(node)) {
+        return Protocol::makePacket(
+            Command::RESPONSE,
+            Status::ERROR,
+            "storage not online"
+        );
+    }
+
+    file_index_.put(file_id, node);
+
+    std::cout << "[tracker] file index added"
+              << ", file_id=" << file_id
+              << ", group=" << node.group_name
+              << ", ip=" << node.ip
+              << ", port=" << node.port
+              << ", total_index=" << file_index_.size()
+              << std::endl;
+
+    return Protocol::makePacket(
+        Command::RESPONSE,
+        Status::OK,
+        "report file upload success"
     );
 }

@@ -113,6 +113,18 @@ public:
                             StorageNode* selected) const;
 
     /*
+    * 检查指定 storage 是否仍然在线。
+    *
+    * 参数：
+    * node：要检查的 storage 节点
+    *
+    * 返回：
+    * true：该 storage 还在 registry 中，并且 online=true
+    * false：不存在或已经 offline
+    */
+    bool isOnline(const StorageNode& node) const;
+
+    /*
      * 返回当前所有 storage 节点。
      *
      * 这里返回 vector，是为了后面方便遍历和调试输出。

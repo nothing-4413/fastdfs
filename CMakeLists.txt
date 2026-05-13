@@ -33,6 +33,7 @@ set(NET_SRC
 
 set(TRACKER_SRC
     src/tracker/StorageRegistry.cpp
+    src/tracker/FileIndex.cpp
     src/tracker/TrackerService.cpp
 )
 
